@@ -9,7 +9,7 @@ on:
 jobs:
   verify:
     name: lint + typecheck + test + build
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -36,11 +36,10 @@ jobs:
       - name: Test
         run: npm test
 
-      - name: Install Xvfb
-        run: sudo apt-get update && sudo apt-get install -y xvfb
-
       - name: Electron renderer runtime smoke
-        run: xvfb-run -a env IMAGE_VIEWER_RUN_ELECTRON_SMOKE=1 node --test dist/tests/renderer-runtime-smoke.test.js
+        env:
+          IMAGE_VIEWER_RUN_ELECTRON_SMOKE: '1'
+        run: node --test dist/tests/renderer-runtime-smoke.test.js
 
       - name: Build
         run: npm run build
