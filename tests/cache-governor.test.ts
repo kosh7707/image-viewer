@@ -78,7 +78,10 @@ test('evictAll empties the cache', () => {
   const g = new CacheGovernor();
   let closed = 0;
   for (let i = 0; i < 5; i++) {
-    g.admit(`p-${i}`, fakeBitmap(2, 2, () => closed++));
+    g.admit(
+      `p-${i}`,
+      fakeBitmap(2, 2, () => closed++),
+    );
   }
   g.evictAll();
   assert.equal(g.size(), 0);
@@ -90,11 +93,15 @@ test('warmEntry sets warm flag via injected warmer', async () => {
   const g = new CacheGovernor();
   g.admit('w.jpg', fakeBitmap(10, 10));
   let called = 0;
-  await warmEntry(g, 'w.jpg', () => { called++; });
+  await warmEntry(g, 'w.jpg', () => {
+    called++;
+  });
   assert.equal(called, 1);
   assert.equal(g.get('w.jpg')!.warm, true);
   // Calling again is a no-op (already warm).
-  await warmEntry(g, 'w.jpg', () => { called++; });
+  await warmEntry(g, 'w.jpg', () => {
+    called++;
+  });
   assert.equal(called, 1);
 });
 

@@ -88,7 +88,10 @@ export class GifHost {
     const delay = this.gif.delays[this.currentFrameIdx] ?? 100;
     if (this.elapsedSinceLastFrame >= delay) {
       // Advance one or more frames if very late (consume budget).
-      while (this.gif && this.elapsedSinceLastFrame >= (this.gif.delays[this.currentFrameIdx] ?? 100)) {
+      while (
+        this.gif &&
+        this.elapsedSinceLastFrame >= (this.gif.delays[this.currentFrameIdx] ?? 100)
+      ) {
         this.elapsedSinceLastFrame -= this.gif.delays[this.currentFrameIdx] ?? 100;
         this.currentFrameIdx = (this.currentFrameIdx + 1) % this.gif.frames.length;
       }

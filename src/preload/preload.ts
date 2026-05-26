@@ -1,9 +1,5 @@
 import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron';
-import type {
-  AlbumLoadPayload,
-  AlbumProgressPayload,
-  RssUpdatePayload,
-} from './api';
+import type { AlbumLoadPayload, AlbumProgressPayload, RssUpdatePayload } from './api';
 
 const api = {
   toggleFullscreen: (): Promise<boolean> => ipcRenderer.invoke('window:toggleFullscreen'),

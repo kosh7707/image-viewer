@@ -27,11 +27,16 @@ function mimeFor(p: string): string {
   const ext = extOf(p);
   switch (ext) {
     case '.jpg':
-    case '.jpeg': return 'image/jpeg';
-    case '.png': return 'image/png';
-    case '.webp': return 'image/webp';
-    case '.gif': return 'image/gif';
-    default: return 'application/octet-stream';
+    case '.jpeg':
+      return 'image/jpeg';
+    case '.png':
+      return 'image/png';
+    case '.webp':
+      return 'image/webp';
+    case '.gif':
+      return 'image/gif';
+    default:
+      return 'application/octet-stream';
   }
 }
 
@@ -121,7 +126,10 @@ export class PreloadQueue {
     const myEpoch = epoch ?? (this.getEpoch ? this.getEpoch() : undefined);
     try {
       const bytes = await window.api.readFile(filePath);
-      const ab = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+      const ab = bytes.buffer.slice(
+        bytes.byteOffset,
+        bytes.byteOffset + bytes.byteLength,
+      ) as ArrayBuffer;
       const blob = new Blob([ab], { type: mimeFor(filePath) });
       const bitmap = await createImageBitmap(blob);
       if (myEpoch !== undefined && this.getEpoch && this.getEpoch() !== myEpoch) {
@@ -132,7 +140,10 @@ export class PreloadQueue {
         }
         return null;
       }
-      this.governor.admit(filePath, bitmap as unknown as { width: number; height: number; close?: () => void });
+      this.governor.admit(
+        filePath,
+        bitmap as unknown as { width: number; height: number; close?: () => void },
+      );
       if (this.warmCtx) {
         this.warmCtx.clearRect(0, 0, 1, 1);
         this.warmCtx.drawImage(bitmap, 0, 0, 1, 1);

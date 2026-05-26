@@ -30,13 +30,12 @@ function walkInto(dir: string, level: number, out: WalkEntry[]): void {
       walkInto(full, level + 1, out);
     } else if (ent.isFile()) {
       if (!SUPPORTED_EXT.has(extOf(ent.name))) continue;
-      let mtimeMs = 0;
       try {
-        mtimeMs = fs.statSync(full).mtimeMs;
+        const mtimeMs = fs.statSync(full).mtimeMs;
+        out.push({ path: full, mtimeMs });
       } catch {
         continue;
       }
-      out.push({ path: full, mtimeMs });
     }
   }
 }

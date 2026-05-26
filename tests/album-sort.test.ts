@@ -1,6 +1,11 @@
 import { test } from 'node:test';
 import * as assert from 'node:assert/strict';
-import { sortAlbum, type AlbumEntry, type SortKey, type SortOrder } from '../src/renderer/album-sort';
+import {
+  sortAlbum,
+  type AlbumEntry,
+  type SortKey,
+  type SortOrder,
+} from '../src/renderer/album-sort';
 
 function makeAlbum(): AlbumEntry[] {
   return [

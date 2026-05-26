@@ -18,7 +18,6 @@ const fakeWindow = {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 (globalThis as any).window = fakeWindow;
 
-// eslint-disable-next-line @typescript-eslint/no-require-imports, import/first
 import { CanvasPainter } from '../src/renderer/canvas';
 
 interface FakeCtxCall {

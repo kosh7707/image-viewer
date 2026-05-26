@@ -82,7 +82,11 @@ export class CacheGovernor {
       this.totalBytes -= old.bytes;
       this.entries.delete(path);
       if (old.bitmap.close && old.bitmap !== bitmap) {
-        try { old.bitmap.close(); } catch { /* ignore */ }
+        try {
+          old.bitmap.close();
+        } catch {
+          /* ignore */
+        }
       }
     }
     const bytes = bitmap.width * bitmap.height * 4 + (gifFrameBytes ?? 0);
@@ -128,10 +132,18 @@ export class CacheGovernor {
     this.entries.delete(path);
     this.totalBytes -= entry.bytes;
     if (entry.bitmap.close) {
-      try { entry.bitmap.close(); } catch { /* ignore */ }
+      try {
+        entry.bitmap.close();
+      } catch {
+        /* ignore */
+      }
     }
     if (this.onEvict) {
-      try { this.onEvict(path, entry); } catch { /* ignore */ }
+      try {
+        this.onEvict(path, entry);
+      } catch {
+        /* ignore */
+      }
     }
     return true;
   }
@@ -165,7 +177,7 @@ export class CacheGovernor {
 export async function warmEntry(
   governor: CacheGovernor,
   path: string,
-  warmer: (bitmap: BitmapLike) => Promise<void> | void
+  warmer: (bitmap: BitmapLike) => Promise<void> | void,
 ): Promise<void> {
   const entry = governor.get(path);
   if (!entry || entry.warm) return;

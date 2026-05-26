@@ -51,7 +51,9 @@ test('loadAlbum: under cap returns ok with summed bytes, no confirm called', asy
 
 test('loadAlbum: over cap with confirm yes returns ok', async () => {
   const huge: ImageEstimate = {
-    width: 1, height: 1, frameCount: 1,
+    width: 1,
+    height: 1,
+    frameCount: 1,
     bytes: DEFAULT_SOFT_CAP_BYTES + 1_000_000,
   };
   const entries: WalkEntry[] = [{ path: '/p/huge.jpg', mtimeMs: 1 }];
@@ -67,7 +69,9 @@ test('loadAlbum: over cap with confirm yes returns ok', async () => {
 
 test('loadAlbum: over cap with confirm no returns cancelled', async () => {
   const huge: ImageEstimate = {
-    width: 1, height: 1, frameCount: 1,
+    width: 1,
+    height: 1,
+    frameCount: 1,
     bytes: DEFAULT_SOFT_CAP_BYTES + 1_000_000,
   };
   const entries: WalkEntry[] = [{ path: '/p/huge.jpg', mtimeMs: 1 }];
@@ -83,7 +87,9 @@ test('loadAlbum: confirm receives total bytes and file count', async () => {
   let receivedBytes = -1;
   let receivedCount = -1;
   const big: ImageEstimate = {
-    width: 1, height: 1, frameCount: 1,
+    width: 1,
+    height: 1,
+    frameCount: 1,
     bytes: DEFAULT_SOFT_CAP_BYTES + 100,
   };
   const entries: WalkEntry[] = [
@@ -146,10 +152,7 @@ test('loadAlbum: per-file measure failure is skipped, others succeed', async () 
   });
   assert.equal(r.status, 'ok');
   assert.equal(r.entries.length, 2, 'bad file dropped from album');
-  assert.deepEqual(
-    r.entries.map((e) => e.path).sort(),
-    ['/p/also-good.png', '/p/good.jpg'],
-  );
+  assert.deepEqual(r.entries.map((e) => e.path).sort(), ['/p/also-good.png', '/p/good.jpg']);
   assert.equal(r.totalBytes, SMALL.bytes * 2);
 });
 

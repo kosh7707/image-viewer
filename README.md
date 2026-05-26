@@ -6,20 +6,20 @@ Supported formats: `.jpg`, `.jpeg`, `.png`, `.webp`, `.gif`.
 
 ## Hotkeys (all 5)
 
-| Key   | Action                          |
-|-------|---------------------------------|
-| `F`   | Toggle borderless fullscreen    |
-| `←`   | Previous image                  |
-| `→`   | Next image                      |
-| `[`   | GIF speed −0.1× (min 0.1×)      |
-| `]`   | GIF speed +0.1× (max 4.0×)      |
+| Key | Action                       |
+| --- | ---------------------------- |
+| `F` | Toggle borderless fullscreen |
+| `←` | Previous image               |
+| `→` | Next image                   |
+| `[` | GIF speed −0.1× (min 0.1×)   |
+| `]` | GIF speed +0.1× (max 4.0×)   |
 
 Right-click anywhere for the context menu: Open File…, Open Folder…, Sort…, `Speed: N.N×` (label-only, updates live), Exit.
 
 ## Cache & preload policy (v2)
 
 - "Open Folder…" recursively walks the chosen directory up to depth 4 (deeper levels are silently dropped) and collects every supported image.
-- Before loading, headers are parsed to estimate the *decoded* RAM footprint:
+- Before loading, headers are parsed to estimate the _decoded_ RAM footprint:
   - JPEG/PNG/WebP → `width × height × 4`
   - GIF → `width × height × 4 × frame_count` (each frame becomes a full-canvas `ImageBitmap` in the decoder worker)
 - If the total exceeds **4 GiB** the user gets a confirm dialog ("이 폴더는 약 N MB 사용 예상…"). "Cancel" keeps the previously loaded album; "Proceed" continues.

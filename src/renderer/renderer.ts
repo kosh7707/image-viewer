@@ -121,7 +121,10 @@ async function renderGif(filePath: string, myEpoch: number): Promise<void> {
   try {
     const bytes = await window.api.readFile(filePath);
     if (myEpoch !== navEpoch) return;
-    const cleanBuf = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+    const cleanBuf = bytes.buffer.slice(
+      bytes.byteOffset,
+      bytes.byteOffset + bytes.byteLength,
+    ) as ArrayBuffer;
     if (bytes.byteLength > GIF_FALLBACK_BYTES) {
       const blob = new Blob([cleanBuf], { type: 'image/gif' });
       const url = URL.createObjectURL(blob);
@@ -136,24 +139,30 @@ async function renderGif(filePath: string, myEpoch: number): Promise<void> {
     }
     const worker = new Worker(workerUrl, { type: 'classic' });
     activeGifWorker = worker;
-    const parsed = await new Promise<{ frames: ImageBitmap[]; delays: number[] } | null>((resolve) => {
-      worker.onmessage = (ev: MessageEvent) => {
-        const data = ev.data;
-        if (data?.type === 'parsed') {
-          resolve({ frames: data.frames as ImageBitmap[], delays: data.delays as number[] });
-        } else if (data?.type === 'error') {
-          console.warn('[gif worker]', data.message);
+    const parsed = await new Promise<{ frames: ImageBitmap[]; delays: number[] } | null>(
+      (resolve) => {
+        worker.onmessage = (ev: MessageEvent) => {
+          const data = ev.data;
+          if (data?.type === 'parsed') {
+            resolve({ frames: data.frames as ImageBitmap[], delays: data.delays as number[] });
+          } else if (data?.type === 'error') {
+            console.warn('[gif worker]', data.message);
+            resolve(null);
+          }
+        };
+        worker.onerror = (e) => {
+          console.warn('[gif worker error]', e);
           resolve(null);
-        }
-      };
-      worker.onerror = (e) => {
-        console.warn('[gif worker error]', e);
-        resolve(null);
-      };
-      worker.postMessage({ type: 'parse', buffer: cleanBuf }, [cleanBuf]);
-    });
+        };
+        worker.postMessage({ type: 'parse', buffer: cleanBuf }, [cleanBuf]);
+      },
+    );
     if (myEpoch !== navEpoch || activeGifWorker !== worker) {
-      try { worker.terminate(); } catch { /* ignore */ }
+      try {
+        worker.terminate();
+      } catch {
+        /* ignore */
+      }
       return;
     }
     if (parsed && parsed.frames.length > 0) {
@@ -216,4 +225,10 @@ window.api.onSortRequest(() => {
 });
 
 // expose for debugging (dev only)
-(window as unknown as { __viewer: unknown }).__viewer = { album, governor, painter, gifHost, sortDialog };
+(window as unknown as { __viewer: unknown }).__viewer = {
+  album,
+  governor,
+  painter,
+  gifHost,
+  sortDialog,
+};

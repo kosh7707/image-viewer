@@ -106,7 +106,7 @@ self.onmessage = async (event: MessageEvent<ParseRequest>) => {
       const bmp = await createImageBitmap(composite);
       bitmaps.push(bmp);
       // delay is in 1/100 sec; spec stores ms.
-      const delayMs = (frame.delay && frame.delay > 0) ? frame.delay : 100;
+      const delayMs = frame.delay && frame.delay > 0 ? frame.delay : 100;
       delays.push(delayMs);
       totalBytes += fullW * fullH * 4;
     }
@@ -123,7 +123,7 @@ self.onmessage = async (event: MessageEvent<ParseRequest>) => {
   } catch (err) {
     const msg: ErrorResponse = {
       type: 'error',
-      message: (err instanceof Error) ? err.message : String(err),
+      message: err instanceof Error ? err.message : String(err),
     };
     self.postMessage(msg);
   }

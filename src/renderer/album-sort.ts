@@ -36,7 +36,9 @@ export function sortAlbum(
   const sign = order === 'asc' ? 1 : -1;
   const sorted = album.slice().sort((a, b) => {
     if (key === 'filename') {
-      return sign * basename(a.path).localeCompare(basename(b.path), undefined, { sensitivity: 'base' });
+      return (
+        sign * basename(a.path).localeCompare(basename(b.path), undefined, { sensitivity: 'base' })
+      );
     }
     // mtime
     return sign * (a.mtimeMs - b.mtimeMs);
