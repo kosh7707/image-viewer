@@ -1,0 +1,50 @@
+appId: com.example.imageviewer
+productName: ImageViewer
+copyright: Copyright (c) 2026
+directories:
+  output: release
+  buildResources: build
+files:
+  - dist/**/*
+  - node_modules/**/*
+  - package.json
+  - "!**/*.map"
+  - "!**/*.ts"
+
+win:
+  target:
+    - target: portable
+      arch:
+        - x64
+  icon: build/icon.ico
+  artifactName: ImageViewer-${version}-${arch}.exe
+
+fileAssociations:
+  - ext: jpg
+    name: JPEG Image
+    description: JPEG image
+    role: Viewer
+    icon: build/icon.ico
+  - ext: jpeg
+    name: JPEG Image
+    description: JPEG image
+    role: Viewer
+    icon: build/icon.ico
+  - ext: png
+    name: PNG Image
+    description: PNG image
+    role: Viewer
+    icon: build/icon.ico
+  - ext: webp
+    name: WebP Image
+    description: WebP image
+    role: Viewer
+    icon: build/icon.ico
+  - ext: gif
+    name: GIF Image
+    description: GIF image
+    role: Viewer
+    icon: build/icon.ico
+
+portable:
+  artifactName: ImageViewer-${version}-portable.exe

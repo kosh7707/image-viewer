@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' data: blob: file:; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: file:; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-src 'none';" />
+    <title>ImageViewer</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <canvas id="canvas"></canvas>
+    <img id="fallback-gif" hidden alt="" />
+    <div id="toast-host"></div>
+    <script src="renderer.js"></script>
+  </body>
+</html>
