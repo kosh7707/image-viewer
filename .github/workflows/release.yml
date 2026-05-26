@@ -17,11 +17,14 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22.12.0
           cache: npm
 
       - name: Install
         run: npm ci
+
+      - name: Dependency audit
+        run: npm audit --audit-level=high
 
       - name: Verify tag matches package.json version
         shell: bash
@@ -36,6 +39,11 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      - name: Electron renderer runtime smoke
+        env:
+          IMAGE_VIEWER_RUN_ELECTRON_SMOKE: '1'
+        run: node --test dist/tests/renderer-runtime-smoke.test.js
 
       - name: Package (electron-builder portable .exe)
         run: npm run dist

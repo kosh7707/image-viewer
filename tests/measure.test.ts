@@ -27,6 +27,14 @@ test('measure GIF multi-frame: bytes scale with frame count', () => {
   assert.equal(r.bytes, 1 * 1 * 4 * 2);
 });
 
+test('measure animated WebP: bytes scale with ANMF frame count', () => {
+  const r = estimateFromBuffer(makeAnimatedWebpContainer(3, 2, 2), '.webp');
+  assert.equal(r.width, 3);
+  assert.equal(r.height, 2);
+  assert.equal(r.frameCount, 2);
+  assert.equal(r.bytes, 3 * 2 * 4 * 2);
+});
+
 test('measure: unsupported extension throws', () => {
   assert.throws(() => estimateFromBuffer(Buffer.from([0]), '.bmp' as '.png'));
 });
@@ -58,3 +66,37 @@ test('measure: known dimensions => bytes formula scales', () => {
   assert.equal(r.height, 50);
   assert.equal(r.bytes, 100 * 50 * 4);
 });
+
+function makeAnimatedWebpContainer(width: number, height: number, frameCount: number): Buffer {
+  const vp8x = Buffer.alloc(10);
+  vp8x[0] = 0x02; // Animation flag.
+  writeUInt24LE(vp8x, width - 1, 4);
+  writeUInt24LE(vp8x, height - 1, 7);
+
+  const chunks = [makeChunk('VP8X', vp8x), makeChunk('ANIM', Buffer.alloc(6))];
+  for (let i = 0; i < frameCount; i += 1) {
+    chunks.push(makeChunk('ANMF', Buffer.alloc(16)));
+  }
+
+  const body = Buffer.concat(chunks);
+  const riff = Buffer.alloc(12);
+  riff.write('RIFF', 0, 4, 'ascii');
+  riff.writeUInt32LE(body.length + 4, 4);
+  riff.write('WEBP', 8, 4, 'ascii');
+  return Buffer.concat([riff, body]);
+}
+
+function makeChunk(fourcc: string, payload: Buffer): Buffer {
+  const header = Buffer.alloc(8);
+  header.write(fourcc, 0, 4, 'ascii');
+  header.writeUInt32LE(payload.length, 4);
+  return payload.length % 2 === 0
+    ? Buffer.concat([header, payload])
+    : Buffer.concat([header, payload, Buffer.from([0])]);
+}
+
+function writeUInt24LE(buf: Buffer, value: number, offset: number): void {
+  buf[offset] = value & 0xff;
+  buf[offset + 1] = (value >> 8) & 0xff;
+  buf[offset + 2] = (value >> 16) & 0xff;
+}

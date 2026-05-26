@@ -24,6 +24,10 @@ import { installContextMenu, pushSpeed } from './menu-host';
 import { RssToast } from './toast';
 import { ProgressToast } from './progress-toast';
 import { SortDialog } from './sort-dialog';
+import { mediaKindForPath } from './media-kind';
+import { NativeImageHost } from './native-image-host';
+import { decodeAnimatedWebp } from './animated-webp-decoder';
+import { disposeFrames } from './animation-disposal';
 
 const GIF_FALLBACK_BYTES = 100 * 1024 * 1024;
 
@@ -42,6 +46,7 @@ const governor = new CacheGovernor({
 });
 const preloader = new PreloadQueue(governor);
 const gifHost = new GifHost(painter, (s) => pushSpeed(s));
+const nativeImageHost = new NativeImageHost(fallbackImg);
 
 const rssToast = new RssToast(toastHost);
 rssToast.install();
@@ -77,26 +82,54 @@ function clearGif(): void {
     activeGifWorker.terminate();
     activeGifWorker = null;
   }
-  fallbackImg.classList.remove('active');
-  fallbackImg.removeAttribute('src');
-}
-
-function isGifPath(p: string): boolean {
-  return p.toLowerCase().endsWith('.gif');
+  nativeImageHost.clear();
+  painter.clear();
 }
 
 async function renderCurrent(): Promise<void> {
   const myEpoch = navEpoch;
   const current = album.current();
   if (!current) {
+    clearGif();
     painter.clear();
     return;
   }
   clearGif();
-  if (isGifPath(current)) {
-    await renderGif(current, myEpoch);
-  } else {
-    await renderStatic(current, myEpoch);
+  switch (mediaKindForPath(current)) {
+    case 'animated-gif':
+      await renderGif(current, myEpoch);
+      break;
+    case 'webp':
+      await renderWebp(current, myEpoch);
+      break;
+    case 'static-bitmap':
+      await renderStatic(current, myEpoch);
+      break;
+  }
+}
+
+async function renderWebp(filePath: string, myEpoch: number): Promise<void> {
+  try {
+    const bytes = await window.api.readFile(filePath);
+    if (myEpoch !== navEpoch) return;
+
+    const animation = await decodeAnimatedWebp(bytes);
+    if (myEpoch !== navEpoch) {
+      animation?.dispose?.();
+      return;
+    }
+
+    if (animation) {
+      nativeImageHost.clear();
+      gifHost.play(animation);
+      return;
+    }
+
+    painter.clear();
+    nativeImageHost.showBytes(bytes, 'image/webp');
+  } catch (err) {
+    console.warn('[render] webp failed:', filePath, err);
+    if (myEpoch === navEpoch) painter.clear();
   }
 }
 
@@ -121,17 +154,14 @@ async function renderGif(filePath: string, myEpoch: number): Promise<void> {
   try {
     const bytes = await window.api.readFile(filePath);
     if (myEpoch !== navEpoch) return;
+    if (bytes.byteLength > GIF_FALLBACK_BYTES) {
+      nativeImageHost.showBytes(bytes, 'image/gif');
+      return;
+    }
     const cleanBuf = bytes.buffer.slice(
       bytes.byteOffset,
       bytes.byteOffset + bytes.byteLength,
     ) as ArrayBuffer;
-    if (bytes.byteLength > GIF_FALLBACK_BYTES) {
-      const blob = new Blob([cleanBuf], { type: 'image/gif' });
-      const url = URL.createObjectURL(blob);
-      fallbackImg.src = url;
-      fallbackImg.classList.add('active');
-      return;
-    }
     const workerUrl = new URL('workers/gif-decoder.worker.js', document.baseURI).toString();
     if (activeGifWorker) {
       activeGifWorker.terminate();
@@ -166,7 +196,7 @@ async function renderGif(filePath: string, myEpoch: number): Promise<void> {
       return;
     }
     if (parsed && parsed.frames.length > 0) {
-      gifHost.play(parsed);
+      gifHost.play({ ...parsed, dispose: () => disposeFrames(parsed.frames) });
     }
   } catch (err) {
     console.warn('[render] gif failed:', filePath, err);
@@ -230,5 +260,6 @@ window.api.onSortRequest(() => {
   governor,
   painter,
   gifHost,
+  nativeImageHost,
   sortDialog,
 };

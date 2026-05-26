@@ -5,7 +5,7 @@ import { parseGIF } from 'gifuct-js';
 export type SupportedExt = '.jpg' | '.jpeg' | '.png' | '.webp' | '.gif';
 
 export interface ImageEstimate {
-  /** Predicted RGBA RAM in bytes once decoded. For GIF: width*height*4*frameCount. */
+  /** Predicted RGBA RAM in bytes once decoded. Animated formats scale by frame count. */
   bytes: number;
   width: number;
   height: number;
@@ -13,7 +13,7 @@ export interface ImageEstimate {
   frameCount: number;
 }
 
-const STATIC_EXTS: ReadonlySet<SupportedExt> = new Set(['.jpg', '.jpeg', '.png', '.webp']);
+const STATIC_EXTS: ReadonlySet<SupportedExt> = new Set(['.jpg', '.jpeg', '.png']);
 
 interface GifLsd {
   width: number;
@@ -52,18 +52,73 @@ function measureStatic(buf: Buffer): ImageEstimate {
   return { width: w, height: h, frameCount: 1, bytes: w * h * 4 };
 }
 
+function measureWebp(buf: Buffer): ImageEstimate {
+  const animated = parseAnimatedWebpInfo(buf);
+  if (animated) {
+    return {
+      ...animated,
+      bytes: animated.width * animated.height * 4 * animated.frameCount,
+    };
+  }
+  return measureStatic(buf);
+}
+
+function parseAnimatedWebpInfo(
+  buf: Buffer,
+): { width: number; height: number; frameCount: number } | null {
+  if (
+    buf.byteLength < 12 ||
+    buf.toString('ascii', 0, 4) !== 'RIFF' ||
+    buf.toString('ascii', 8, 12) !== 'WEBP'
+  ) {
+    return null;
+  }
+
+  let hasAnimationFlag = false;
+  let width = 0;
+  let height = 0;
+  let frameCount = 0;
+  let offset = 12;
+
+  while (offset + 8 <= buf.byteLength) {
+    const fourcc = buf.toString('ascii', offset, offset + 4);
+    const size = buf.readUInt32LE(offset + 4);
+    const payloadStart = offset + 8;
+    const payloadEnd = payloadStart + size;
+    const paddedEnd = payloadEnd + (size % 2);
+    if (payloadEnd > buf.byteLength || paddedEnd > buf.byteLength) return null;
+
+    if (fourcc === 'VP8X' && size >= 10) {
+      hasAnimationFlag = (buf[payloadStart]! & 0x02) !== 0;
+      width = readUInt24LE(buf, payloadStart + 4) + 1;
+      height = readUInt24LE(buf, payloadStart + 7) + 1;
+    } else if (fourcc === 'ANMF') {
+      frameCount += 1;
+    }
+
+    offset = paddedEnd;
+  }
+
+  if (!hasAnimationFlag || width <= 0 || height <= 0 || frameCount <= 0) return null;
+  return { width, height, frameCount };
+}
+
+function readUInt24LE(buf: Buffer, offset: number): number {
+  return buf[offset]! | (buf[offset + 1]! << 8) | (buf[offset + 2]! << 16);
+}
+
 /**
  * Predict the decoded RGBA RAM footprint of an image given its raw bytes
- * and extension. JPEG/PNG/WebP delegate to `image-size` for dimensions.
- * GIF is parsed via `gifuct-js` to count frames; each frame becomes a
- * full-canvas ImageBitmap in the decoder Worker, so total bytes scale
- * linearly with frame count.
+ * and extension. JPEG/PNG/static WebP delegate to `image-size` for dimensions.
+ * GIF and animated WebP are parsed to count frames; each decoded frame becomes
+ * a full-canvas bitmap, so total bytes scale linearly with frame count.
  *
  * Throws on unsupported extensions. Returns a zeroed estimate on parse
  * failure for GIFs (the album-load pipeline must not crash on one bad file).
  */
 export function estimateFromBuffer(buf: Buffer, ext: SupportedExt): ImageEstimate {
   if (ext === '.gif') return measureGif(buf);
+  if (ext === '.webp') return measureWebp(buf);
   if (STATIC_EXTS.has(ext)) return measureStatic(buf);
   throw new Error(`unsupported extension: ${ext}`);
 }

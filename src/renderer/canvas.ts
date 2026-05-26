@@ -41,9 +41,14 @@ export class CanvasPainter {
     if (this.lastBitmap) this.drawImage(this.lastBitmap);
   }
 
-  clear(): void {
+  private fillBlack(): void {
     this.ctx.fillStyle = '#000';
     this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+  }
+
+  clear(): void {
+    this.lastBitmap = null;
+    this.fillBlack();
   }
 
   /**
@@ -51,7 +56,7 @@ export class CanvasPainter {
    */
   drawImage(bitmap: ImageBitmap | HTMLImageElement | HTMLCanvasElement): void {
     this.lastBitmap = bitmap;
-    this.clear();
+    this.fillBlack();
     const cw = this.canvas.width;
     const ch = this.canvas.height;
     const bw = (bitmap as DrawableSource).width;

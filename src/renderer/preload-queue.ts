@@ -15,16 +15,12 @@
  */
 
 import { CacheGovernor } from './cache-governor';
+import { extOfPath, isPreloadableBitmapPath } from './media-kind';
 
 const DEFAULT_CONCURRENCY = 8;
 
-function extOf(p: string): string {
-  const i = p.lastIndexOf('.');
-  return i >= 0 ? p.slice(i).toLowerCase() : '';
-}
-
 function mimeFor(p: string): string {
-  const ext = extOf(p);
+  const ext = extOfPath(p);
   switch (ext) {
     case '.jpg':
     case '.jpeg':
@@ -70,9 +66,10 @@ export class PreloadQueue {
   }
 
   /**
-   * Schedule decode of every static path. Skips GIFs (handled separately),
-   * cached entries, and inflight entries. Honours the navigation epoch for
-   * staleness checks. Optionally calls `onProgress` after every completion.
+   * Schedule decode of every static bitmap path. Skips animated/native paths
+   * (GIF and WebP), cached entries, and inflight entries. Honours the
+   * navigation epoch for staleness checks. Optionally calls `onProgress` after
+   * every completion.
    */
   scheduleAll(paths: string[], epoch?: number, onProgress?: (p: PreloadProgress) => void): void {
     if (paths.length === 0) return;
@@ -80,7 +77,7 @@ export class PreloadQueue {
     const targets: string[] = [];
     for (const p of paths) {
       if (!p) continue;
-      if (extOf(p) === '.gif') continue;
+      if (!isPreloadableBitmapPath(p)) continue;
       if (this.governor.has(p)) continue;
       if (this.inflight.has(p)) continue;
       targets.push(p);

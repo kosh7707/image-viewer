@@ -1,18 +1,18 @@
 # ImageViewer
 
-Minimal fullscreen Electron image viewer for Windows. Black canvas, no chrome, five hotkeys total. Built for the use case "I just want to flip through a folder of JPEG/PNG/WebP/GIF — and please give me GIF speed control."
+Minimal fullscreen Electron image viewer for Windows. Black canvas, no chrome, five hotkeys total. Built for the use case "I just want to flip through a folder of JPEG/PNG/WebP/GIF — and please give me animated-image speed control."
 
 Supported formats: `.jpg`, `.jpeg`, `.png`, `.webp`, `.gif`.
 
 ## Hotkeys (all 5)
 
-| Key | Action                       |
-| --- | ---------------------------- |
-| `F` | Toggle borderless fullscreen |
-| `←` | Previous image               |
-| `→` | Next image                   |
-| `[` | GIF speed −0.1× (min 0.1×)   |
-| `]` | GIF speed +0.1× (max 4.0×)   |
+| Key | Action                          |
+| --- | ------------------------------- |
+| `F` | Toggle borderless fullscreen    |
+| `←` | Previous image                  |
+| `→` | Next image                      |
+| `[` | GIF/WebP speed −0.1× (min 0.1×) |
+| `]` | GIF/WebP speed +0.1× (max 4.0×) |
 
 Right-click anywhere for the context menu: Open File…, Open Folder…, Sort…, `Speed: N.N×` (label-only, updates live), Exit.
 
@@ -20,8 +20,9 @@ Right-click anywhere for the context menu: Open File…, Open Folder…, Sort…
 
 - "Open Folder…" recursively walks the chosen directory up to depth 4 (deeper levels are silently dropped) and collects every supported image.
 - Before loading, headers are parsed to estimate the _decoded_ RAM footprint:
-  - JPEG/PNG/WebP → `width × height × 4`
+  - JPEG/PNG/static WebP → `width × height × 4`
   - GIF → `width × height × 4 × frame_count` (each frame becomes a full-canvas `ImageBitmap` in the decoder worker)
+  - Animated WebP → `width × height × 4 × ANMF_frame_count` (parsed from the WebP RIFF container)
 - If the total exceeds **4 GiB** the user gets a confirm dialog ("이 폴더는 약 N MB 사용 예상…"). "Cancel" keeps the previously loaded album; "Proceed" continues.
 - Approved albums are preloaded **entirely** into the renderer's `CacheGovernor` (entry/byte caps set to `MAX_SAFE_INTEGER`; the 4 GB dialog is the real RAM gate). Background concurrency is capped at 8 simultaneous decodes.
 - A single progress toast at the bottom-right shows `측정 중 X / N` then `로딩 중 X / N (P%)`. It auto-dismisses after the final phase.
@@ -58,9 +59,11 @@ Runs `tsc` then `node --test dist/tests/*.test.js`. Suite covers:
 - `cache-governor` — count cap, byte cap, LRU touch, full eviction, re-admit accounting, warm flag.
 - `canvas-painter` — fullscreen-resize redraw replay.
 - `walk` — recursive collection, depth cap, symlink skip, hidden-dir skip, case-insensitive ext.
-- `measure` — PNG/JPEG/WebP delegate to `image-size`; GIF parsed via `gifuct-js` for accurate frame count; corrupt GIFs return a safe zero estimate.
+- `measure` — PNG/JPEG/static WebP delegate to `image-size`; GIF and animated WebP count frames for RAM estimates; corrupt GIFs return a safe zero estimate.
 - `album-sort` — filename/mtime × asc/desc, current-path preservation, no input mutation.
 - `album-loader` — IDENTIFYING → MEASURING → CONFIRMING state machine with mocked walker/measurer.
+- `animated-webp-decoder` — WebCodecs feature detection, frame-index decoding, duration conversion, and cleanup/fallback behavior.
+- `renderer-runtime-smoke` — real Electron sandbox/preload/renderer boot, GIF frame advance, animated WebP speed control, and static WebP native fallback.
 
 ## Windows packaging
 
@@ -81,7 +84,7 @@ The plan calls for `build/icon.ico`. This repo intentionally does NOT ship a bin
 - **Main process** (`src/main/`)
   - `main.ts` — `BrowserWindow` setup (`contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`), argv parsing, IPC wiring, defense-in-depth path allowlist for `fs:readFile`.
   - `walk.ts` — recursive image walker, depth cap = 4, symlink + hidden-dir skip.
-  - `measure.ts` — header-based RAM estimator. `image-size` for static formats; `gifuct-js` for GIF frame count.
+  - `measure.ts` — header-based RAM estimator. `image-size` for static formats; `gifuct-js` for GIF frame count; WebP RIFF `ANMF` counting for animated WebP.
   - `album-loader.ts` — pure state machine: walk → measure → confirm-if-over-cap → ready. Per-file measure errors silently drop that file.
   - `album-flow.ts` — wires `loadAlbum` to the Electron `BrowserWindow`: confirm dialog, progress IPC, `album:load` broadcast.
   - `folder.ts` — just the `SUPPORTED_EXTS` constant.
@@ -94,9 +97,11 @@ The plan calls for `build/icon.ico`. This repo intentionally does NOT ship a bin
   - `album-sort.ts` — pure sort helper (filename/mtime × asc/desc); preserves current path.
   - `canvas.ts` — black-background letterboxed `drawImage`; caches last bitmap and replays on resize so fullscreen toggles don't blank the canvas.
   - `cache-governor.ts` — count + byte cap LRU; v2 instantiated with `MAX_SAFE_INTEGER` caps because the 4 GB confirm gate happens upstream.
-  - `preload-queue.ts` — `scheduleAll()` decodes every static path with bounded concurrency (8). GPU pre-warm via 1×1 drawImage to an `OffscreenCanvas`.
-  - `gif-host.ts` — `requestAnimationFrame` driver, `[/]` keys, hot-swappable speed, clamp `[0.1, 4.0]`.
+  - `preload-queue.ts` — `scheduleAll()` decodes every static bitmap path with bounded concurrency (8). GPU pre-warm via 1×1 drawImage to an `OffscreenCanvas`. GIF and WebP are skipped because they need animated/native playback paths.
+  - `animated-webp-decoder.ts` — WebCodecs `ImageDecoder` path for animated WebP: frame-index decode, microsecond-duration conversion, `VideoFrame` cleanup, `ImageBitmap` ownership.
+  - `gif-host.ts` — decoded-animation `requestAnimationFrame` driver, `[/]` keys, hot-swappable speed, clamp `[0.1, 4.0]`.
   - `workers/gif-decoder.worker.ts` — `gifuct-js` parse + per-frame `createImageBitmap` (inside the Worker) → `postMessage` with transfer list. Image-bomb guard rejects > 64 MP / > 5000 frames.
+  - `native-image-host.ts` — browser-native `<img>` overlay for static WebP, unsupported WebCodecs fallback, and large-GIF fallback; owns Blob URL revoke/hide/show lifecycle.
   - `progress-toast.ts` — single sticky toast that reports measure + preload progress.
   - `sort-dialog.ts` — modal table; sort selector + clickable rows that jump to the picked image.
   - `toast.ts` — RSS toast (4 GiB crossing warning), auto-dismiss after 5 s.
@@ -111,7 +116,7 @@ The plan calls for `build/icon.ico`. This repo intentionally does NOT ship a bin
 - **RSS measurement** uses `process.getProcessMemoryInfo().resident`, which is accurate on Windows but may report differently on Linux/macOS. The 4 GiB toast is informational; the real RAM gate is the upstream confirm dialog driven by header-based estimates.
 - **Renderer crash loses the cache.** Documented limitation; restart the app.
 - **Mac/Linux builds** are not supported in v1. The TypeScript compiles cross-platform; `npm test` runs anywhere; only the packaged binary is Windows-only.
-- **GIF disposal mode 3** ("restore to previous") is not supported; such frames render as "keep" (mode 0). Rare in practice; affected GIFs will show minor compositing artifacts but will not crash.
+- **Animated WebP speed control requires Chromium WebCodecs.** In the packaged Electron runtime this uses `ImageDecoder` and the same `[` / `]` speed host as GIF. If WebCodecs is unavailable or a WebP is static/corrupt, the file falls back to Chromium's native `<img>` playback.
 
 ## License
 

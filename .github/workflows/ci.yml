@@ -15,11 +15,14 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22.12.0
           cache: npm
 
       - name: Install
         run: npm ci
+
+      - name: Dependency audit
+        run: npm audit --audit-level=high
 
       - name: Lint
         run: npm run lint
@@ -32,6 +35,12 @@ jobs:
 
       - name: Test
         run: npm test
+
+      - name: Install Xvfb
+        run: sudo apt-get update && sudo apt-get install -y xvfb
+
+      - name: Electron renderer runtime smoke
+        run: xvfb-run -a env IMAGE_VIEWER_RUN_ELECTRON_SMOKE=1 node --test dist/tests/renderer-runtime-smoke.test.js
 
       - name: Build
         run: npm run build

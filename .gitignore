@@ -17,6 +17,7 @@ release/
 
 # OMC planning artifacts (local only)
 .omc/
+.omx/
 
 # Logs
 *.log

@@ -96,10 +96,10 @@ self.onmessage = async (event: MessageEvent<ParseRequest>) => {
       patchCtx.putImageData(patchData, 0, 0);
 
       // Disposal: 2 = restore to background; 3 = restore to previous.
-      // For simplicity we treat 2 by clearing the patch region, others as keep.
-      if (frame.disposalType === 2) {
-        ctx.clearRect(frame.dims.left, frame.dims.top, patchW, patchH);
-      }
+      // Apply disposal AFTER snapshotting this frame, because the disposal
+      // method describes the canvas state for the next frame, not the current
+      // one. Save the pre-frame state only when mode 3 needs it.
+      const previous = frame.disposalType === 3 ? ctx.getImageData(0, 0, fullW, fullH) : null;
       ctx.drawImage(patchCanvas, frame.dims.left, frame.dims.top);
 
       // Snapshot the full frame as an ImageBitmap.
@@ -109,6 +109,12 @@ self.onmessage = async (event: MessageEvent<ParseRequest>) => {
       const delayMs = frame.delay && frame.delay > 0 ? frame.delay : 100;
       delays.push(delayMs);
       totalBytes += fullW * fullH * 4;
+
+      if (frame.disposalType === 2) {
+        ctx.clearRect(frame.dims.left, frame.dims.top, patchW, patchH);
+      } else if (frame.disposalType === 3 && previous) {
+        ctx.putImageData(previous, 0, 0);
+      }
     }
 
     const response: ParsedResponse = {
