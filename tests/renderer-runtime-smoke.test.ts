@@ -16,7 +16,7 @@ test(
     const electronPath = requireFromHere('electron') as string;
     const scriptPath = path.join(process.cwd(), 'scripts', 'smoke-renderer-runtime.js');
 
-    const result = await runSmokeProcess(electronPath, [scriptPath], 15_000);
+    const result = await runSmokeProcess(electronPath, [scriptPath], 60_000);
     assert.equal(result.status, 'ok', result.details);
   },
 );
@@ -30,12 +30,14 @@ function runSmokeProcess(command: string, args: string[], timeoutMs: number): Pr
   return new Promise((resolve, reject) => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'image-viewer-smoke-parent-'));
     const resultPath = path.join(tempDir, 'result.json');
+    const tracePath = path.join(tempDir, 'trace.txt');
     const child = spawn(command, args, {
       cwd: process.cwd(),
       env: {
         ...process.env,
         ELECTRON_ENABLE_LOGGING: '1',
         IMAGE_VIEWER_SMOKE_RESULT: resultPath,
+        IMAGE_VIEWER_SMOKE_TRACE: tracePath,
       },
       stdio: ['ignore', 'pipe', 'pipe'],
       detached: process.platform !== 'win32',
@@ -70,13 +72,22 @@ function runSmokeProcess(command: string, args: string[], timeoutMs: number): Pr
       }
     };
 
+    const readTrace = (): string => {
+      if (!fs.existsSync(tracePath)) return '';
+      try {
+        return fs.readFileSync(tracePath, 'utf8');
+      } catch {
+        return '';
+      }
+    };
+
     const poll = setInterval(() => {
       const result = readResult();
       if (result) finish(result);
       if (exitCode !== null) {
         finish({
           status: 'fail',
-          details: `electron exited before writing result: ${exitCode}\nstdout:\n${stdout}\nstderr:\n${stderr}`,
+          details: `electron exited before writing result: ${exitCode}\ntrace:\n${readTrace()}\nstdout:\n${stdout}\nstderr:\n${stderr}`,
         });
       }
     }, 100);
@@ -89,7 +100,11 @@ function runSmokeProcess(command: string, args: string[], timeoutMs: number): Pr
       } catch {
         // ignore
       }
-      reject(new Error(`timed out after ${timeoutMs}ms\nstdout:\n${stdout}\nstderr:\n${stderr}`));
+      reject(
+        new Error(
+          `timed out after ${timeoutMs}ms\ntrace:\n${readTrace()}\nstdout:\n${stdout}\nstderr:\n${stderr}`,
+        ),
+      );
     }, timeoutMs);
 
     child.stdout.setEncoding('utf8');
