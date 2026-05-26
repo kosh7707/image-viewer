@@ -26,7 +26,7 @@ export interface RssUpdatePayload {
   bytes: number;
 }
 
-export type AlbumProgressPhase = 'measuring' | 'preloading';
+export type AlbumProgressPhase = 'scanning' | 'measuring' | 'preloading';
 
 export interface AlbumProgressPayload {
   phase: AlbumProgressPhase;

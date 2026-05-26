@@ -48,3 +48,23 @@ test('ProgressToast hides instead of sticking on an empty preload phase', () => 
     globals.document = oldDocument;
   }
 });
+
+test('ProgressToast shows an indeterminate scanning phase before exact totals are known', () => {
+  const globals = globalThis as unknown as RuntimeGlobals;
+  const oldDocument = globals.document;
+  globals.document = {
+    createElement: () => new FakeElement(),
+  };
+
+  try {
+    const host = new FakeElement();
+    const toast = new ProgressToast(host as unknown as HTMLElement);
+
+    toast.update({ phase: 'scanning', completed: 0, total: 0 });
+
+    assert.equal(host.children.length, 1);
+    assert.equal(host.children[0]!.textContent, '파일 찾는 중...');
+  } finally {
+    globals.document = oldDocument;
+  }
+});

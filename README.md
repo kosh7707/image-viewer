@@ -26,7 +26,7 @@ Right-click anywhere for the context menu: Open File…, Open Folder…, Sort…
   - Animated WebP → `width × height × 4 × ANMF_frame_count` (parsed from the WebP RIFF container)
 - If the total exceeds **4 GiB** the user gets a confirm dialog ("이 폴더는 약 N MB 사용 예상…"). "Cancel" keeps the previously loaded album; "Proceed" continues.
 - Approved static bitmap entries (JPEG/PNG/static WebP) are preloaded into the renderer's `CacheGovernor` (entry/byte caps set to `MAX_SAFE_INTEGER`; the 4 GB dialog is the real RAM gate). Background concurrency is capped at 8 simultaneous decodes. GIF and animated WebP stay on animated/native playback paths instead of being collapsed through `createImageBitmap`.
-- A single progress toast at the bottom-right shows `측정 중 X / N` then `로딩 중 X / N (P%)`. It auto-dismisses after the final phase.
+- A single progress toast at the bottom-right shows `파일 찾는 중...` before exact totals are known, then `측정 중 X / N`, then `로딩 중 X / N (P%)`. It auto-dismisses after the final phase.
 - The right-click **Sort…** dialog lists every image in the loaded album and lets you sort by filename or modification time, ascending or descending. Clicking a row jumps to that image. Re-sorting preserves the currently displayed image.
 
 ## Installation
@@ -77,6 +77,8 @@ Requires running on Windows for a native portable `.exe`. In WSL, `electron-buil
 
 The portable EXE registers the four image extensions for Windows "Open with…" via the `fileAssociations` block. After install, right-click any supported image in Explorer → Open with… → choose ImageViewer.
 
+The portable EXE also shows a small bitmap splash while NSIS extracts the embedded app before Electron starts. That boot phase happens before renderer code can run, so the splash is configured through `portable.splashImage` rather than the in-app progress toast.
+
 ### Icon placeholder
 
 The plan calls for `build/icon.ico`. This repo intentionally does NOT ship a binary icon file (we don't generate binaries inside the codebase). Before running `npm run dist` on Windows, drop a 256×256 multi-resolution `.ico` at `build/icon.ico`. Without it `electron-builder` will fall back to its default icon.
@@ -105,7 +107,7 @@ The plan calls for `build/icon.ico`. This repo intentionally does NOT ship a bin
   - `speed-hud.ts` - transient upper-right HUD shown after `[` / `]` speed changes for GIF and animated WebP.
   - `workers/gif-decoder.worker.ts` — `gifuct-js` parse + per-frame `createImageBitmap` (inside the Worker) → `postMessage` with transfer list. Image-bomb guard rejects > 64 MP / > 5000 frames.
   - `native-image-host.ts` - browser-native `<img>` overlay for unsupported WebCodecs fallback, metadata-less WebP fallback, and large-GIF fallback; owns Blob URL revoke/hide/show lifecycle.
-  - `progress-toast.ts` — single sticky toast that reports measure + preload progress.
+  - `progress-toast.ts` — single sticky toast that reports startup file discovery, measure, and preload progress.
   - `sort-dialog.ts` — modal table; sort selector + clickable rows that jump to the picked image.
   - `toast.ts` — RSS toast (4 GiB crossing warning), auto-dismiss after 5 s.
   - `menu-host.ts` — right-click + speed-label push.

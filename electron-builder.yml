@@ -42,3 +42,4 @@ fileAssociations:
 
 portable:
   artifactName: ImageViewer-${version}-portable.exe
+  splashImage: build/portable-splash.bmp

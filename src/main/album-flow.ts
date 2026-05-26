@@ -4,7 +4,7 @@ import { walkImages } from './walk';
 import { estimateFromFile } from './measure';
 import { loadAlbum, DEFAULT_SOFT_CAP_BYTES, type MeasuredWalkEntry } from './album-loader';
 import { SUPPORTED_EXTS } from './folder';
-import type { AlbumEntryDTO } from '../preload/api';
+import type { AlbumEntryDTO, AlbumProgressPhase } from '../preload/api';
 
 type SetAlbumPaths = (images: string[]) => void;
 
@@ -30,6 +30,22 @@ function formatMB(bytes: number): string {
   return (bytes / 1024 / 1024).toFixed(0);
 }
 
+function sendAlbumProgress(
+  win: BrowserWindow,
+  phase: AlbumProgressPhase,
+  completed: number,
+  total: number,
+  bytesSoFar: number,
+): void {
+  if (!win.isDestroyed()) {
+    win.webContents.send('album:progress', { phase, completed, total, bytesSoFar });
+  }
+}
+
+function yieldToUi(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve));
+}
+
 /**
  * IDENTIFY -> MEASURE -> (CONFIRM if over cap) -> broadcast album:load.
  * Progress events are pushed to the renderer during measure.
@@ -41,6 +57,9 @@ export async function executeAlbumLoad(
   selectedFile: string | null,
 ): Promise<void> {
   const resolvedRoot = path.resolve(rootDir);
+  sendAlbumProgress(win, 'scanning', 0, 0, 0);
+  await yieldToUi();
+
   const result = await loadAlbum(resolvedRoot, {
     walk: (root) => walkImages(root),
     measureFile: (p) => estimateFromFile(p),
@@ -59,13 +78,14 @@ export async function executeAlbumLoad(
       return r.response === 1;
     },
     onProgress: (phase, completed, total, bytesSoFar) => {
-      if (!win.isDestroyed()) {
-        win.webContents.send('album:progress', { phase, completed, total, bytesSoFar });
-      }
+      sendAlbumProgress(win, phase, completed, total, bytesSoFar);
     },
   });
 
-  if (result.status !== 'ok') return;
+  if (result.status !== 'ok') {
+    sendAlbumProgress(win, 'preloading', 0, 0, 0);
+    return;
+  }
 
   setAlbumPathsImpl(result.entries.map((e) => e.path));
   let idx = 0;
