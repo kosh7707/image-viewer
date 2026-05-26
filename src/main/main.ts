@@ -99,10 +99,10 @@ ipcMain.handle('window:toggleFullscreen', (event) => {
   return toggleFullscreen(win);
 });
 
-ipcMain.handle('menu:show', (event) => {
+ipcMain.handle('menu:show', (event, point?: { x: number; y: number }) => {
   const win = BrowserWindow.fromWebContents(event.sender);
   if (!win) return;
-  showContextMenu(win);
+  showContextMenu(win, point);
 });
 
 ipcMain.handle('speed:update', (_event, mult: number) => {

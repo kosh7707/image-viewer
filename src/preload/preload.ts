@@ -3,7 +3,8 @@ import type { AlbumLoadPayload, AlbumProgressPayload, RssUpdatePayload } from '.
 
 const api = {
   toggleFullscreen: (): Promise<boolean> => ipcRenderer.invoke('window:toggleFullscreen'),
-  showContextMenu: (): Promise<void> => ipcRenderer.invoke('menu:show'),
+  showContextMenu: (point?: { x: number; y: number }): Promise<void> =>
+    ipcRenderer.invoke('menu:show', point),
   updateSpeed: (speed: number): Promise<void> => ipcRenderer.invoke('speed:update', speed),
   readFile: async (filePath: string): Promise<Uint8Array> => {
     const buf = (await ipcRenderer.invoke('fs:readFile', filePath)) as Buffer | Uint8Array;

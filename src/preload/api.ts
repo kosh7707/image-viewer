@@ -31,7 +31,7 @@ export interface ImageViewerApi {
   /** Toggle fullscreen via main process. Returns new fullscreen state. */
   toggleFullscreen(): Promise<boolean>;
   /** Request main process to pop up the right-click context menu. */
-  showContextMenu(): Promise<void>;
+  showContextMenu(point?: { x: number; y: number }): Promise<void>;
   /** Notify main of current GIF speed (for the menu label). */
   updateSpeed(speed: number): Promise<void>;
   /** Read an image file as bytes (validated by main). */

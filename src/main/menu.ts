@@ -9,7 +9,21 @@ export const menuState: MenuState = {
   speedMultiplier: 1.0,
 };
 
-export function showContextMenu(win: BrowserWindow): void {
+export interface MenuPoint {
+  x: number;
+  y: number;
+}
+
+function normalizePoint(point: MenuPoint | undefined): MenuPoint | undefined {
+  if (!point) return undefined;
+  if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) return undefined;
+  return {
+    x: Math.max(0, Math.round(point.x)),
+    y: Math.max(0, Math.round(point.y)),
+  };
+}
+
+export function showContextMenu(win: BrowserWindow, point?: MenuPoint): void {
   const template: MenuItemConstructorOptions[] = [
     {
       label: 'Open File...',
@@ -44,5 +58,6 @@ export function showContextMenu(win: BrowserWindow): void {
     },
   ];
   const menu = Menu.buildFromTemplate(template);
-  menu.popup({ window: win });
+  const popupPoint = normalizePoint(point);
+  menu.popup(popupPoint ? { window: win, ...popupPoint } : { window: win });
 }
