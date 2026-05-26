@@ -38,6 +38,10 @@ export class SortDialog {
     if (this.overlay) this.overlay.classList.remove('active');
   }
 
+  isOpen(): boolean {
+    return this.overlay?.classList.contains('active') ?? false;
+  }
+
   private ensureBuilt(): void {
     if (this.overlay) return;
     const overlay = document.createElement('div');

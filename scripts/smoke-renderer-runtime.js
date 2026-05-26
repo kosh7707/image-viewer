@@ -65,6 +65,7 @@ function installIpc() {
   ipcMain.handle('window:toggleFullscreen', () => false);
   ipcMain.handle('menu:show', () => undefined);
   ipcMain.handle('speed:update', () => undefined);
+  ipcMain.handle('app:quit', () => app.quit());
   ipcMain.handle('dialog:openFile', () => undefined);
   ipcMain.handle('dialog:openFolder', () => undefined);
   ipcMain.handle('fs:readFile', async (_event, filePath) => {

@@ -223,6 +223,10 @@ installKeyboard({
   onSpeedUp: () => {
     gifHost.bumpSpeed(+0.1);
   },
+  onExit: () => {
+    void window.api.quitApp();
+  },
+  isExitBlocked: () => sortDialog.isOpen(),
 });
 
 window.api.onAlbumLoad((payload) => {

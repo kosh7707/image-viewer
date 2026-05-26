@@ -13,6 +13,8 @@ export interface InputHandlers {
   onFullscreen: () => void;
   onSpeedDown: () => void;
   onSpeedUp: () => void;
+  onExit: () => void;
+  isExitBlocked?: () => boolean;
 }
 
 export function installKeyboard(handlers: InputHandlers): () => void {
@@ -40,6 +42,11 @@ export function installKeyboard(handlers: InputHandlers): () => void {
       case ']':
         e.preventDefault();
         handlers.onSpeedUp();
+        break;
+      case 'Escape':
+        if (handlers.isExitBlocked?.()) return;
+        e.preventDefault();
+        handlers.onExit();
         break;
       default:
         break;

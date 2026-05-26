@@ -1,18 +1,19 @@
 # ImageViewer
 
-Minimal fullscreen Electron image viewer for Windows. Black canvas, no chrome, five hotkeys total. Built for the use case "I just want to flip through a folder of JPEG/PNG/WebP/GIF — and please give me animated-image speed control."
+Minimal fullscreen Electron image viewer for Windows. Black canvas, no chrome, six hotkeys total. Built for the use case "I just want to flip through a folder of JPEG/PNG/WebP/GIF — and please give me animated-image speed control."
 
 Supported formats: `.jpg`, `.jpeg`, `.png`, `.webp`, `.gif`.
 
-## Hotkeys (all 5)
+## Hotkeys (all 6)
 
-| Key | Action                          |
-| --- | ------------------------------- |
-| `F` | Toggle borderless fullscreen    |
-| `←` | Previous image                  |
-| `→` | Next image                      |
-| `[` | GIF/WebP speed −0.1× (min 0.1×) |
-| `]` | GIF/WebP speed +0.1× (max 4.0×) |
+| Key   | Action                                  |
+| ----- | --------------------------------------- |
+| `F`   | Toggle borderless fullscreen            |
+| `←`   | Previous image                          |
+| `→`   | Next image                              |
+| `[`   | GIF/WebP speed −0.1× (min 0.1×)         |
+| `]`   | GIF/WebP speed +0.1× (max 4.0×)         |
+| `Esc` | Exit immediately when no dialog is open |
 
 Right-click anywhere for the context menu: Open File…, Open Folder…, Sort…, `Speed: N.N×` (label-only, updates live), Exit.
 

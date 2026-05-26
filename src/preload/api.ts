@@ -40,6 +40,8 @@ export interface ImageViewerApi {
   openFileDialog(): Promise<void>;
   /** Native folder-open dialog. */
   openFolderDialog(): Promise<void>;
+  /** Quit the app immediately via main process. */
+  quitApp(): Promise<void>;
   /** Subscribe to album:load events from the main process. */
   onAlbumLoad(cb: (payload: AlbumLoadPayload) => void): () => void;
   /** Subscribe to rss:update events. */

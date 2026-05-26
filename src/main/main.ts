@@ -138,6 +138,10 @@ ipcMain.handle('dialog:openFolder', async (event) => {
   await openFolderDialogAndLoad(win);
 });
 
+ipcMain.handle('app:quit', () => {
+  app.quit();
+});
+
 app.whenReady().then(createWindow);
 
 app.on('window-all-closed', () => {
