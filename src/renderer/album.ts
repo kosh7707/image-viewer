@@ -22,8 +22,12 @@ export class Album {
   }
 
   current(): string | null {
+    return this.currentEntry()?.path ?? null;
+  }
+
+  currentEntry(): AlbumEntryDTO | null {
     if (this.state.entries.length === 0) return null;
-    return this.state.entries[this.state.currentIndex]?.path ?? null;
+    return this.state.entries[this.state.currentIndex] ?? null;
   }
 
   next(): string | null {

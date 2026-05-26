@@ -1,0 +1,144 @@
+import { test } from 'node:test';
+import * as assert from 'node:assert/strict';
+import { CacheGovernor } from '../src/renderer/cache-governor';
+import { PreloadQueue, type PreloadProgress } from '../src/renderer/preload-queue';
+
+interface RuntimeGlobals {
+  window?: {
+    api: {
+      readFile(filePath: string): Promise<Uint8Array>;
+    };
+  };
+  createImageBitmap?: (source: Blob) => Promise<ImageBitmap>;
+}
+
+interface FakeBitmap {
+  width: number;
+  height: number;
+  closed: boolean;
+  close(): void;
+}
+
+function withRendererRuntime<T>(
+  files: Record<string, Uint8Array>,
+  run: (calls: { reads: string[]; decodes: Blob[]; bitmaps: FakeBitmap[] }) => Promise<T>,
+): Promise<T> {
+  const globals = globalThis as unknown as RuntimeGlobals;
+  const oldWindow = globals.window;
+  const oldCreateImageBitmap = globals.createImageBitmap;
+  const calls = { reads: [] as string[], decodes: [] as Blob[], bitmaps: [] as FakeBitmap[] };
+
+  globals.window = {
+    api: {
+      async readFile(filePath: string): Promise<Uint8Array> {
+        calls.reads.push(filePath);
+        const bytes = files[filePath];
+        if (!bytes) throw new Error(`missing fixture: ${filePath}`);
+        return bytes;
+      },
+    },
+  };
+  globals.createImageBitmap = async (source: Blob): Promise<ImageBitmap> => {
+    calls.decodes.push(source);
+    const bitmap: FakeBitmap = {
+      width: 2,
+      height: 3,
+      closed: false,
+      close(): void {
+        this.closed = true;
+      },
+    };
+    calls.bitmaps.push(bitmap);
+    return bitmap as unknown as ImageBitmap;
+  };
+
+  return run(calls).finally(() => {
+    globals.window = oldWindow;
+    globals.createImageBitmap = oldCreateImageBitmap;
+  });
+}
+
+test('PreloadQueue scheduleAll preloads measured static WebP entries into the cache', async () => {
+  await withRendererRuntime({ '/p/static.webp': new Uint8Array([1, 2, 3]) }, async (calls) => {
+    const governor = new CacheGovernor();
+    const queue = new PreloadQueue(governor);
+
+    const final = await waitForPreload(queue, [
+      { path: '/p/static.webp', mtimeMs: 1, frameCount: 1 },
+      { path: '/p/animated.webp', mtimeMs: 1, frameCount: 2 },
+      { path: '/p/unknown.webp', mtimeMs: 1 },
+      { path: '/p/skip.gif', mtimeMs: 1 },
+    ]);
+
+    assert.deepEqual(calls.reads, ['/p/static.webp']);
+    assert.equal(calls.decodes.length, 1);
+    assert.equal(final.total, 1);
+    assert.equal(final.completed, 1);
+    assert.equal(governor.has('/p/static.webp'), true);
+    assert.equal(governor.has('/p/animated.webp'), false);
+    assert.equal(governor.has('/p/unknown.webp'), false);
+    assert.equal(governor.has('/p/skip.gif'), false);
+  });
+});
+
+test('PreloadQueue refuses animated WebP bytes before createImageBitmap can collapse animation', async () => {
+  await withRendererRuntime(
+    { '/p/animated.webp': makeAnimatedWebpContainer(3, 2, 2) },
+    async (calls) => {
+      const governor = new CacheGovernor();
+      const queue = new PreloadQueue(governor);
+
+      const bitmap = await queue.fetchAndDecode('/p/animated.webp');
+
+      assert.equal(bitmap, null);
+      assert.deepEqual(calls.reads, ['/p/animated.webp']);
+      assert.equal(calls.decodes.length, 0);
+      assert.equal(governor.has('/p/animated.webp'), false);
+    },
+  );
+});
+
+function waitForPreload(
+  queue: PreloadQueue,
+  paths: Parameters<PreloadQueue['scheduleAll']>[0],
+): Promise<PreloadProgress> {
+  return new Promise((resolve) => {
+    queue.scheduleAll(paths, 0, (progress) => {
+      if (progress.completed >= progress.total) resolve(progress);
+    });
+  });
+}
+
+function makeAnimatedWebpContainer(width: number, height: number, frameCount: number): Uint8Array {
+  const vp8x = Buffer.alloc(10);
+  vp8x[0] = 0x02; // Animation flag.
+  writeUInt24LE(vp8x, width - 1, 4);
+  writeUInt24LE(vp8x, height - 1, 7);
+
+  const chunks = [makeChunk('VP8X', vp8x), makeChunk('ANIM', Buffer.alloc(6))];
+  for (let i = 0; i < frameCount; i += 1) {
+    chunks.push(makeChunk('ANMF', Buffer.alloc(16)));
+  }
+
+  const body = Buffer.concat(chunks);
+  const riff = Buffer.alloc(12);
+  riff.write('RIFF', 0, 4, 'ascii');
+  riff.writeUInt32LE(body.length + 4, 4);
+  riff.write('WEBP', 8, 4, 'ascii');
+  return new Uint8Array(Buffer.concat([riff, body]));
+}
+
+function makeChunk(fourcc: string, payload: Buffer): Buffer {
+  const header = Buffer.alloc(8);
+  header.write(fourcc, 0, 4, 'ascii');
+  header.writeUInt32LE(payload.length, 4);
+  return payload.length % 2 === 0
+    ? Buffer.concat([header, payload])
+    : Buffer.concat([header, payload, Buffer.from([0])]);
+}
+
+function writeUInt24LE(buf: Buffer, value: number, offset: number): void {
+  buf[offset] = value & 0xff;
+  buf[offset + 1] = (value >> 8) & 0xff;
+  buf[offset + 2] = (value >> 16) & 0xff;
+}

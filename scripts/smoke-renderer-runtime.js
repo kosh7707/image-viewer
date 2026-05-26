@@ -283,7 +283,16 @@ async function main() {
   trace('webp:animated-fixture');
   win.webContents.send('album:load', {
     folder: tempDir,
-    entries: [{ path: animatedWebpPath, mtimeMs: Date.now() }],
+    entries: [
+      {
+        path: animatedWebpPath,
+        mtimeMs: Date.now(),
+        width: 4,
+        height: 4,
+        frameCount: 2,
+        estimatedBytes: 4 * 4 * 4 * 2,
+      },
+    ],
     currentIndex: 0,
   });
   const escapedAnimatedWebpPath = JSON.stringify(animatedWebpPath);
@@ -308,6 +317,29 @@ async function main() {
     'animated WebP WebCodecs route',
   );
   trace('webp:animated-decoded');
+
+  await win.webContents.executeJavaScript(
+    `window.dispatchEvent(new KeyboardEvent('keydown', { key: ']', bubbles: true }))`,
+    true,
+  );
+  await waitFor(
+    win,
+    `(() => {
+      const hud = document.querySelector('.speed-hud');
+      const h = window.__viewer && window.__viewer.gifHost;
+      return Boolean(
+        hud &&
+          hud.classList.contains('active') &&
+          hud.textContent === '1.1×' &&
+          h &&
+          h.speedMultiplier === 1.1
+      );
+    })()`,
+    2_000,
+    'animated WebP speed HUD',
+  );
+  trace('webp:speed-hud');
+
   trace(
     `webp:animated-state:${JSON.stringify(
       await win.webContents.executeJavaScript(
@@ -385,7 +417,16 @@ async function main() {
   trace('webp:static-fixture');
   win.webContents.send('album:load', {
     folder: tempDir,
-    entries: [{ path: staticWebpPath, mtimeMs: Date.now() }],
+    entries: [
+      {
+        path: staticWebpPath,
+        mtimeMs: Date.now(),
+        width: 4,
+        height: 4,
+        frameCount: 1,
+        estimatedBytes: 4 * 4 * 4,
+      },
+    ],
     currentIndex: 0,
   });
   const escapedStaticWebpPath = JSON.stringify(staticWebpPath);
@@ -397,27 +438,25 @@ async function main() {
       const governor = window.__viewer && window.__viewer.governor;
       return Boolean(
         img &&
-          img.classList.contains('active') &&
-          img.hidden === false &&
-          img.naturalWidth > 0 &&
-          img.src.startsWith('blob:') &&
+          !img.classList.contains('active') &&
+          img.hidden === true &&
           h &&
           !h.gif &&
           governor &&
-          !governor.has(${escapedStaticWebpPath})
+          governor.has(${escapedStaticWebpPath})
       );
     })()`,
     5_000,
-    'static WebP native fallback route',
+    'static WebP canvas/cache route',
   );
-  trace('webp:static-native-route');
+  trace('webp:static-cache-route');
 
   writeResult('ok', {
     message:
-      'renderer booted, GIF advanced, animated WebP speed worked, and static WebP used native fallback',
+      'renderer booted, GIF advanced, animated WebP speed HUD worked, and static WebP used canvas/cache',
   });
   console.log(
-    'SMOKE_OK renderer booted, GIF advanced, animated WebP speed worked, and static WebP used native fallback',
+    'SMOKE_OK renderer booted, GIF advanced, animated WebP speed HUD worked, and static WebP used canvas/cache',
   );
   cleanup();
   app.exit(0);

@@ -45,6 +45,10 @@ test('loadAlbum: under cap returns ok with summed bytes, no confirm called', asy
   });
   assert.equal(r.status, 'ok');
   assert.equal(r.entries.length, 2);
+  assert.deepEqual(
+    r.entries.map((e) => e.estimate),
+    [SMALL, SMALL],
+  );
   assert.equal(r.totalBytes, 80_000);
   assert.equal(confirmCalled, false, 'confirm must not fire below cap');
 });

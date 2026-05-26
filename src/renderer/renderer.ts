@@ -24,10 +24,11 @@ import { installContextMenu, pushSpeed } from './menu-host';
 import { RssToast } from './toast';
 import { ProgressToast } from './progress-toast';
 import { SortDialog } from './sort-dialog';
-import { mediaKindForPath } from './media-kind';
+import { mediaKindForEntry } from './media-kind';
 import { NativeImageHost } from './native-image-host';
 import { decodeAnimatedWebp } from './animated-webp-decoder';
 import { disposeFrames } from './animation-disposal';
+import { SpeedHud } from './speed-hud';
 
 const GIF_FALLBACK_BYTES = 100 * 1024 * 1024;
 
@@ -51,6 +52,7 @@ const nativeImageHost = new NativeImageHost(fallbackImg);
 const rssToast = new RssToast(toastHost);
 rssToast.install();
 const progressToast = new ProgressToast(toastHost);
+const speedHud = new SpeedHud(toastHost);
 const sortDialog = new SortDialog(dialogHost, {
   onSortChange: (entries, newIdx) => {
     album.reorder(entries, newIdx);
@@ -88,22 +90,22 @@ function clearGif(): void {
 
 async function renderCurrent(): Promise<void> {
   const myEpoch = navEpoch;
-  const current = album.current();
+  const current = album.currentEntry();
   if (!current) {
     clearGif();
     painter.clear();
     return;
   }
   clearGif();
-  switch (mediaKindForPath(current)) {
+  switch (mediaKindForEntry(current)) {
     case 'animated-gif':
-      await renderGif(current, myEpoch);
+      await renderGif(current.path, myEpoch);
       break;
     case 'webp':
-      await renderWebp(current, myEpoch);
+      await renderWebp(current.path, myEpoch);
       break;
     case 'static-bitmap':
-      await renderStatic(current, myEpoch);
+      await renderStatic(current.path, myEpoch);
       break;
   }
 }
@@ -218,10 +220,10 @@ installKeyboard({
     void window.api.toggleFullscreen();
   },
   onSpeedDown: () => {
-    gifHost.bumpSpeed(-0.1);
+    speedHud.show(gifHost.bumpSpeed(-0.1));
   },
   onSpeedUp: () => {
-    gifHost.bumpSpeed(+0.1);
+    speedHud.show(gifHost.bumpSpeed(+0.1));
   },
   onExit: () => {
     void window.api.quitApp();
@@ -236,8 +238,7 @@ window.api.onAlbumLoad((payload) => {
   album.load(payload.folder, payload.entries, payload.currentIndex);
   void renderCurrent();
   // Then kick off background preload of every static path in the album.
-  const total = payload.entries.length;
-  preloader.scheduleAll(album.paths(), navEpoch, ({ completed }) => {
+  preloader.scheduleAll(album.entries(), navEpoch, ({ completed, total }) => {
     progressToast.update({ phase: 'preloading', completed, total });
   });
 });

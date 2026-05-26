@@ -6,6 +6,14 @@
 export interface AlbumEntryDTO {
   path: string;
   mtimeMs: number;
+  /** Header-derived width, when the album was loaded by the main process. */
+  width?: number;
+  /** Header-derived height, when the album was loaded by the main process. */
+  height?: number;
+  /** Header-derived frame count; static images are 1, animated images are >1. */
+  frameCount?: number;
+  /** Header-derived decoded-memory estimate in bytes. */
+  estimatedBytes?: number;
 }
 
 export interface AlbumLoadPayload {

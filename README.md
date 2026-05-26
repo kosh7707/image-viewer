@@ -15,7 +15,7 @@ Supported formats: `.jpg`, `.jpeg`, `.png`, `.webp`, `.gif`.
 | `]`   | GIF/WebP speed +0.1× (max 4.0×)         |
 | `Esc` | Exit immediately when no dialog is open |
 
-Right-click anywhere for the context menu: Open File…, Open Folder…, Sort…, `Speed: N.N×` (label-only, updates live), Exit.
+Right-click anywhere for the context menu: Open File…, Open Folder…, Sort…, `Speed: N.N×` (label-only, updates live), Exit. Pressing `[` / `]` also shows a brief translucent speed HUD in the upper-right corner.
 
 ## Cache & preload policy (v2)
 
@@ -25,7 +25,7 @@ Right-click anywhere for the context menu: Open File…, Open Folder…, Sort…
   - GIF → `width × height × 4 × frame_count` (each frame becomes a full-canvas `ImageBitmap` in the decoder worker)
   - Animated WebP → `width × height × 4 × ANMF_frame_count` (parsed from the WebP RIFF container)
 - If the total exceeds **4 GiB** the user gets a confirm dialog ("이 폴더는 약 N MB 사용 예상…"). "Cancel" keeps the previously loaded album; "Proceed" continues.
-- Approved albums are preloaded **entirely** into the renderer's `CacheGovernor` (entry/byte caps set to `MAX_SAFE_INTEGER`; the 4 GB dialog is the real RAM gate). Background concurrency is capped at 8 simultaneous decodes.
+- Approved static bitmap entries (JPEG/PNG/static WebP) are preloaded into the renderer's `CacheGovernor` (entry/byte caps set to `MAX_SAFE_INTEGER`; the 4 GB dialog is the real RAM gate). Background concurrency is capped at 8 simultaneous decodes. GIF and animated WebP stay on animated/native playback paths instead of being collapsed through `createImageBitmap`.
 - A single progress toast at the bottom-right shows `측정 중 X / N` then `로딩 중 X / N (P%)`. It auto-dismisses after the final phase.
 - The right-click **Sort…** dialog lists every image in the loaded album and lets you sort by filename or modification time, ascending or descending. Clicking a row jumps to that image. Re-sorting preserves the currently displayed image.
 
@@ -64,7 +64,8 @@ Runs `tsc` then `node --test dist/tests/*.test.js`. Suite covers:
 - `album-sort` — filename/mtime × asc/desc, current-path preservation, no input mutation.
 - `album-loader` — IDENTIFYING → MEASURING → CONFIRMING state machine with mocked walker/measurer.
 - `animated-webp-decoder` — WebCodecs feature detection, frame-index decoding, duration conversion, and cleanup/fallback behavior.
-- `renderer-runtime-smoke` — real Electron sandbox/preload/renderer boot, GIF frame advance, animated WebP speed control, and static WebP native fallback.
+- `renderer-runtime-smoke` - real Electron sandbox/preload/renderer boot, GIF frame advance, animated WebP speed HUD, and static WebP canvas/cache route.
+- `speed-hud` — transient upper-right speed display, latest-value reuse, and auto-hide behavior.
 
 ## Windows packaging
 
@@ -94,15 +95,16 @@ The plan calls for `build/icon.ico`. This repo intentionally does NOT ship a bin
   - `rss.ts` — 1 s `process.getProcessMemoryInfo()` poll → `rss:update` IPC.
 - **Preload** (`src/preload/`) — `contextBridge.exposeInMainWorld('api', {...})`. Shared types live in `api.ts` (single source of truth for both preload and renderer).
 - **Renderer** (`src/renderer/`)
-  - `album.ts` — entry list (path + mtime) + current index + reorder support.
+  - `album.ts` - entry list (path + mtime + optional measured metadata) + current index + reorder support.
   - `album-sort.ts` — pure sort helper (filename/mtime × asc/desc); preserves current path.
   - `canvas.ts` — black-background letterboxed `drawImage`; caches last bitmap and replays on resize so fullscreen toggles don't blank the canvas.
   - `cache-governor.ts` — count + byte cap LRU; v2 instantiated with `MAX_SAFE_INTEGER` caps because the 4 GB confirm gate happens upstream.
-  - `preload-queue.ts` — `scheduleAll()` decodes every static bitmap path with bounded concurrency (8). GPU pre-warm via 1×1 drawImage to an `OffscreenCanvas`. GIF and WebP are skipped because they need animated/native playback paths.
+  - `preload-queue.ts` - `scheduleAll()` decodes every measured static bitmap path with bounded concurrency (8). GPU pre-warm via 1x1 drawImage to an `OffscreenCanvas`. GIF, animated WebP, and metadata-less WebP are skipped because they need animated/native playback paths.
   - `animated-webp-decoder.ts` — WebCodecs `ImageDecoder` path for animated WebP: frame-index decode, microsecond-duration conversion, `VideoFrame` cleanup, `ImageBitmap` ownership.
   - `gif-host.ts` — decoded-animation `requestAnimationFrame` driver, `[/]` keys, hot-swappable speed, clamp `[0.1, 4.0]`.
+  - `speed-hud.ts` - transient upper-right HUD shown after `[` / `]` speed changes for GIF and animated WebP.
   - `workers/gif-decoder.worker.ts` — `gifuct-js` parse + per-frame `createImageBitmap` (inside the Worker) → `postMessage` with transfer list. Image-bomb guard rejects > 64 MP / > 5000 frames.
-  - `native-image-host.ts` — browser-native `<img>` overlay for static WebP, unsupported WebCodecs fallback, and large-GIF fallback; owns Blob URL revoke/hide/show lifecycle.
+  - `native-image-host.ts` - browser-native `<img>` overlay for unsupported WebCodecs fallback, metadata-less WebP fallback, and large-GIF fallback; owns Blob URL revoke/hide/show lifecycle.
   - `progress-toast.ts` — single sticky toast that reports measure + preload progress.
   - `sort-dialog.ts` — modal table; sort selector + clickable rows that jump to the picked image.
   - `toast.ts` — RSS toast (4 GiB crossing warning), auto-dismiss after 5 s.
@@ -117,7 +119,7 @@ The plan calls for `build/icon.ico`. This repo intentionally does NOT ship a bin
 - **RSS measurement** uses `process.getProcessMemoryInfo().resident`, which is accurate on Windows but may report differently on Linux/macOS. The 4 GiB toast is informational; the real RAM gate is the upstream confirm dialog driven by header-based estimates.
 - **Renderer crash loses the cache.** Documented limitation; restart the app.
 - **Mac/Linux builds** are not supported in v1. The TypeScript compiles cross-platform; `npm test` runs anywhere; only the packaged binary is Windows-only.
-- **Animated WebP speed control requires Chromium WebCodecs.** In the packaged Electron runtime this uses `ImageDecoder` and the same `[` / `]` speed host as GIF. If WebCodecs is unavailable or a WebP is static/corrupt, the file falls back to Chromium's native `<img>` playback.
+- **Animated WebP speed control requires Chromium WebCodecs.** In the packaged Electron runtime this uses `ImageDecoder` and the same `[` / `]` speed host as GIF. Static WebP loaded through the normal album flow uses the canvas/cache path; metadata-less, unsupported, or corrupt WebP falls back to Chromium's native `<img>` playback.
 
 ## License
 

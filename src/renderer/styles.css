@@ -87,6 +87,34 @@ body {
   min-width: 240px;
 }
 
+.speed-hud {
+  position: fixed;
+  top: 24px;
+  right: 24px;
+  z-index: 9999;
+  pointer-events: none;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: rgba(24, 24, 24, 0.66);
+  color: rgba(255, 255, 255, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.38);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  opacity: 0;
+  transform: translateY(-4px);
+  transition:
+    opacity 160ms ease,
+    transform 160ms ease;
+}
+
+.speed-hud.active {
+  opacity: 1;
+  transform: translateY(0);
+}
+
 #dialog-host {
   position: absolute;
   top: 0;

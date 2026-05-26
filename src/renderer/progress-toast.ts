@@ -28,6 +28,10 @@ export class ProgressToast {
   }
 
   update(u: ProgressUpdate): void {
+    if (u.total <= 0) {
+      this.hide();
+      return;
+    }
     this.cancelHideTimer();
     this.ensureNode();
     const label = PHASE_LABEL[u.phase];

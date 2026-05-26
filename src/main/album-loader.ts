@@ -16,8 +16,12 @@ export interface AlbumLoadDeps {
 
 export interface AlbumLoadResult {
   status: 'ok' | 'cancelled' | 'empty';
-  entries: WalkEntry[];
+  entries: MeasuredWalkEntry[];
   totalBytes: number;
+}
+
+export interface MeasuredWalkEntry extends WalkEntry {
+  estimate: ImageEstimate;
 }
 
 /**
@@ -36,13 +40,13 @@ export async function loadAlbum(rootDir: string, deps: AlbumLoadDeps): Promise<A
   }
 
   // MEASURING (sequential; per-file readFile is the dominant cost anyway)
-  const surviving: WalkEntry[] = [];
+  const surviving: MeasuredWalkEntry[] = [];
   let totalBytes = 0;
   for (let i = 0; i < walked.length; i++) {
     const entry = walked[i]!;
     try {
       const est = await deps.measureFile(entry.path);
-      surviving.push(entry);
+      surviving.push({ ...entry, estimate: est });
       totalBytes += est.bytes;
     } catch {
       // silently drop unreadable / corrupt file

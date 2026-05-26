@@ -3,8 +3,9 @@
  *
  * Cache policy v2: no sliding window. The album-loader gates total RAM via
  * the 4 GB confirm dialog, so the queue simply enqueues every path the
- * caller hands it, skipping entries already cached or in flight. GIFs are
- * skipped here; they go through the dedicated worker pipeline.
+ * caller hands it, skipping entries already cached or in flight. GIFs and
+ * animated/unknown WebP files are skipped here; they go through dedicated
+ * animated/native playback paths.
  *
  * Each decoded entry is admitted to the CacheGovernor, then GPU-pre-warmed
  * via a 1x1 drawImage to a hidden OffscreenCanvas so subsequent navigations
@@ -15,7 +16,9 @@
  */
 
 import { CacheGovernor } from './cache-governor';
-import { extOfPath, isPreloadableBitmapPath } from './media-kind';
+import { extOfPath, isPreloadableBitmapEntry, isPreloadableBitmapPath } from './media-kind';
+import type { AlbumEntryDTO } from '../preload/api';
+import { isAnimatedWebpBytes } from '../shared/webp-info';
 
 const DEFAULT_CONCURRENCY = 8;
 
@@ -40,6 +43,8 @@ export interface PreloadProgress {
   completed: number;
   total: number;
 }
+
+type PreloadSource = string | AlbumEntryDTO;
 
 export class PreloadQueue {
   private governor: CacheGovernor;
@@ -66,18 +71,23 @@ export class PreloadQueue {
   }
 
   /**
-   * Schedule decode of every static bitmap path. Skips animated/native paths
-   * (GIF and WebP), cached entries, and inflight entries. Honours the
+   * Schedule decode of every measured static bitmap source. Skips animated/native paths
+   * (GIF, animated WebP, and metadata-less WebP), cached entries, and inflight entries. Honours the
    * navigation epoch for staleness checks. Optionally calls `onProgress` after
    * every completion.
    */
-  scheduleAll(paths: string[], epoch?: number, onProgress?: (p: PreloadProgress) => void): void {
-    if (paths.length === 0) return;
+  scheduleAll(
+    sources: PreloadSource[],
+    epoch?: number,
+    onProgress?: (p: PreloadProgress) => void,
+  ): void {
+    if (sources.length === 0) return;
     const myEpoch = epoch ?? (this.getEpoch ? this.getEpoch() : 0);
     const targets: string[] = [];
-    for (const p of paths) {
+    for (const source of sources) {
+      const p = pathOf(source);
       if (!p) continue;
-      if (!isPreloadableBitmapPath(p)) continue;
+      if (!isPreloadableSource(source)) continue;
       if (this.governor.has(p)) continue;
       if (this.inflight.has(p)) continue;
       targets.push(p);
@@ -123,12 +133,8 @@ export class PreloadQueue {
     const myEpoch = epoch ?? (this.getEpoch ? this.getEpoch() : undefined);
     try {
       const bytes = await window.api.readFile(filePath);
-      const ab = bytes.buffer.slice(
-        bytes.byteOffset,
-        bytes.byteOffset + bytes.byteLength,
-      ) as ArrayBuffer;
-      const blob = new Blob([ab], { type: mimeFor(filePath) });
-      const bitmap = await createImageBitmap(blob);
+      if (extOfPath(filePath) === '.webp' && isAnimatedWebpBytes(bytes)) return null;
+      const bitmap = await decodeBitmap(filePath, bytes);
       if (myEpoch !== undefined && this.getEpoch && this.getEpoch() !== myEpoch) {
         try {
           (bitmap as unknown as { close?: () => void }).close?.();
@@ -151,4 +157,23 @@ export class PreloadQueue {
       this.inflight.delete(filePath);
     }
   }
+}
+
+function pathOf(source: PreloadSource): string {
+  return typeof source === 'string' ? source : source.path;
+}
+
+function isPreloadableSource(source: PreloadSource): boolean {
+  return typeof source === 'string'
+    ? isPreloadableBitmapPath(source)
+    : isPreloadableBitmapEntry(source);
+}
+
+async function decodeBitmap(filePath: string, bytes: Uint8Array): Promise<ImageBitmap> {
+  const ab = bytes.buffer.slice(
+    bytes.byteOffset,
+    bytes.byteOffset + bytes.byteLength,
+  ) as ArrayBuffer;
+  const blob = new Blob([ab], { type: mimeFor(filePath) });
+  return await createImageBitmap(blob);
 }

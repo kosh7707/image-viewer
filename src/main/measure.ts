@@ -1,6 +1,7 @@
 import * as fs from 'node:fs';
 import { imageSize } from 'image-size';
 import { parseGIF } from 'gifuct-js';
+import { parseAnimatedWebpInfo } from '../shared/webp-info';
 
 export type SupportedExt = '.jpg' | '.jpeg' | '.png' | '.webp' | '.gif';
 
@@ -61,50 +62,6 @@ function measureWebp(buf: Buffer): ImageEstimate {
     };
   }
   return measureStatic(buf);
-}
-
-function parseAnimatedWebpInfo(
-  buf: Buffer,
-): { width: number; height: number; frameCount: number } | null {
-  if (
-    buf.byteLength < 12 ||
-    buf.toString('ascii', 0, 4) !== 'RIFF' ||
-    buf.toString('ascii', 8, 12) !== 'WEBP'
-  ) {
-    return null;
-  }
-
-  let hasAnimationFlag = false;
-  let width = 0;
-  let height = 0;
-  let frameCount = 0;
-  let offset = 12;
-
-  while (offset + 8 <= buf.byteLength) {
-    const fourcc = buf.toString('ascii', offset, offset + 4);
-    const size = buf.readUInt32LE(offset + 4);
-    const payloadStart = offset + 8;
-    const payloadEnd = payloadStart + size;
-    const paddedEnd = payloadEnd + (size % 2);
-    if (payloadEnd > buf.byteLength || paddedEnd > buf.byteLength) return null;
-
-    if (fourcc === 'VP8X' && size >= 10) {
-      hasAnimationFlag = (buf[payloadStart]! & 0x02) !== 0;
-      width = readUInt24LE(buf, payloadStart + 4) + 1;
-      height = readUInt24LE(buf, payloadStart + 7) + 1;
-    } else if (fourcc === 'ANMF') {
-      frameCount += 1;
-    }
-
-    offset = paddedEnd;
-  }
-
-  if (!hasAnimationFlag || width <= 0 || height <= 0 || frameCount <= 0) return null;
-  return { width, height, frameCount };
-}
-
-function readUInt24LE(buf: Buffer, offset: number): number {
-  return buf[offset]! | (buf[offset + 1]! << 8) | (buf[offset + 2]! << 16);
 }
 
 /**

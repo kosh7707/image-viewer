@@ -1,8 +1,8 @@
 import { BrowserWindow, dialog } from 'electron';
 import * as path from 'path';
-import { walkImages, type WalkEntry } from './walk';
+import { walkImages } from './walk';
 import { estimateFromFile } from './measure';
-import { loadAlbum, DEFAULT_SOFT_CAP_BYTES } from './album-loader';
+import { loadAlbum, DEFAULT_SOFT_CAP_BYTES, type MeasuredWalkEntry } from './album-loader';
 import { SUPPORTED_EXTS } from './folder';
 import type { AlbumEntryDTO } from '../preload/api';
 
@@ -15,8 +15,15 @@ export function bindSetAlbumPaths(fn: SetAlbumPaths): void {
   setAlbumPathsImpl = fn;
 }
 
-function entriesToDTO(entries: WalkEntry[]): AlbumEntryDTO[] {
-  return entries.map((e) => ({ path: e.path, mtimeMs: e.mtimeMs }));
+export function entriesToDTO(entries: MeasuredWalkEntry[]): AlbumEntryDTO[] {
+  return entries.map((e) => ({
+    path: e.path,
+    mtimeMs: e.mtimeMs,
+    width: e.estimate.width,
+    height: e.estimate.height,
+    frameCount: e.estimate.frameCount,
+    estimatedBytes: e.estimate.bytes,
+  }));
 }
 
 function formatMB(bytes: number): string {
