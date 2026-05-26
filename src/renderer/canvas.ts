@@ -14,6 +14,7 @@ export class CanvasPainter {
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
   private dpr: number;
+  private lastBitmap: ImageBitmap | HTMLImageElement | HTMLCanvasElement | null = null;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -35,6 +36,9 @@ export class CanvasPainter {
     this.canvas.style.height = `${h}px`;
     this.ctx.imageSmoothingEnabled = true;
     this.ctx.imageSmoothingQuality = 'high';
+    // Re-letterbox the last-drawn bitmap into the new dimensions; without this,
+    // entering/exiting fullscreen leaves the canvas blank until the next navigation.
+    if (this.lastBitmap) this.drawImage(this.lastBitmap);
   }
 
   clear(): void {
@@ -46,6 +50,7 @@ export class CanvasPainter {
    * Letterbox `bitmap` into the canvas. Maintains aspect ratio.
    */
   drawImage(bitmap: ImageBitmap | HTMLImageElement | HTMLCanvasElement): void {
+    this.lastBitmap = bitmap;
     this.clear();
     const cw = this.canvas.width;
     const ch = this.canvas.height;
