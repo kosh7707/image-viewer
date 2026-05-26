@@ -79,3 +79,131 @@ body {
 .toast .close-btn:hover {
   color: #ff8080;
 }
+
+.toast-progress {
+  border-color: rgba(120, 180, 255, 0.6);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  min-width: 240px;
+}
+
+#dialog-host {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 10000;
+}
+
+.sort-dialog-overlay {
+  display: none;
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  pointer-events: auto;
+  align-items: center;
+  justify-content: center;
+}
+
+.sort-dialog-overlay.active {
+  display: flex;
+}
+
+.sort-dialog-panel {
+  background: #1e1e1e;
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  width: min(720px, 90vw);
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+}
+
+.sort-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.sort-dialog-header h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.sort-dialog-close {
+  background: transparent;
+  border: none;
+  color: #fff;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.sort-dialog-controls {
+  display: flex;
+  gap: 16px;
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.sort-dialog-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.sort-dialog-label select {
+  background: #2a2a2a;
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 13px;
+}
+
+.sort-dialog-table-wrap {
+  overflow: auto;
+  flex: 1;
+}
+
+.sort-dialog-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.sort-dialog-table th,
+.sort-dialog-table td {
+  text-align: left;
+  padding: 6px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  white-space: nowrap;
+}
+
+.sort-dialog-table th {
+  position: sticky;
+  top: 0;
+  background: #262626;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.sort-dialog-table tbody tr {
+  cursor: pointer;
+}
+
+.sort-dialog-table tbody tr:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.sort-dialog-table tbody tr.current {
+  background: rgba(120, 180, 255, 0.15);
+}

@@ -1,16 +1,22 @@
 /**
- * preload-queue.ts — fetch+decode the ±10 window around the current index.
+ * preload-queue.ts — fetch+decode every static image in the album.
  *
- * On `currentIndex` change we schedule decodes for `[idx-10, idx+10]`,
- * skipping entries already cached. Decoded entries are admitted to the
- * CacheGovernor, then GPU-pre-warmed via a 1x1 drawImage to a hidden
- * OffscreenCanvas.
+ * Cache policy v2: no sliding window. The album-loader gates total RAM via
+ * the 4 GB confirm dialog, so the queue simply enqueues every path the
+ * caller hands it, skipping entries already cached or in flight. GIFs are
+ * skipped here; they go through the dedicated worker pipeline.
+ *
+ * Each decoded entry is admitted to the CacheGovernor, then GPU-pre-warmed
+ * via a 1x1 drawImage to a hidden OffscreenCanvas so subsequent navigations
+ * paint without a texture-upload stall.
+ *
+ * Optionally a concurrency limit keeps disk IO from being saturated by
+ * thousands of simultaneous reads; default 8 fetches in flight.
  */
 
 import { CacheGovernor } from './cache-governor';
-import * as path from 'path';
 
-const PRELOAD_RADIUS = 10;
+const DEFAULT_CONCURRENCY = 8;
 
 function extOf(p: string): string {
   const i = p.lastIndexOf('.');
@@ -29,17 +35,18 @@ function mimeFor(p: string): string {
   }
 }
 
+export interface PreloadProgress {
+  completed: number;
+  total: number;
+}
+
 export class PreloadQueue {
   private governor: CacheGovernor;
   private inflight: Set<string> = new Set();
   private warmCanvas: OffscreenCanvas | null = null;
   private warmCtx: OffscreenCanvasRenderingContext2D | null = null;
-  /**
-   * Optional callback supplying the current navigation epoch. The queue
-   * uses it to discard stale results from rapid arrow-key navigation.
-   * Returning `undefined` (or leaving unset) disables epoch checks.
-   */
   private getEpoch: (() => number) | null = null;
+  private concurrency = DEFAULT_CONCURRENCY;
 
   constructor(governor: CacheGovernor) {
     this.governor = governor;
@@ -53,44 +60,56 @@ export class PreloadQueue {
     }
   }
 
-  /** Install (or replace) the epoch supplier used for staleness checks. */
   setEpochSupplier(getEpoch: () => number): void {
     this.getEpoch = getEpoch;
   }
 
   /**
-   * Schedule preloads for paths around `currentIndex` (inclusive).
-   * Out-of-bounds indices are clamped (no wrap).
-   *
-   * `epoch` is captured at call time; if `getEpoch()` later diverges,
-   * any in-flight decode for this batch will be discarded on completion.
+   * Schedule decode of every static path. Skips GIFs (handled separately),
+   * cached entries, and inflight entries. Honours the navigation epoch for
+   * staleness checks. Optionally calls `onProgress` after every completion.
    */
-  schedule(paths: string[], currentIndex: number, epoch?: number): void {
+  scheduleAll(paths: string[], epoch?: number, onProgress?: (p: PreloadProgress) => void): void {
     if (paths.length === 0) return;
     const myEpoch = epoch ?? (this.getEpoch ? this.getEpoch() : 0);
-    const start = Math.max(0, currentIndex - PRELOAD_RADIUS);
-    const end = Math.min(paths.length - 1, currentIndex + PRELOAD_RADIUS);
-    for (let i = start; i <= end; i++) {
-      const p = paths[i];
+    const targets: string[] = [];
+    for (const p of paths) {
       if (!p) continue;
+      if (extOf(p) === '.gif') continue;
       if (this.governor.has(p)) continue;
       if (this.inflight.has(p)) continue;
-      // Skip GIFs in the standard preload path — they go through gif-host.
-      if (extOf(p) === '.gif') continue;
-      this.fetchAndDecode(p, myEpoch).catch((err) => {
-        // log + skip; do not poison the cache.
-        // eslint-disable-next-line no-console
-        console.warn('[preload] failed:', p, err?.message ?? err);
-      });
+      targets.push(p);
     }
+    if (targets.length === 0) {
+      onProgress?.({ completed: 0, total: 0 });
+      return;
+    }
+
+    let completed = 0;
+    let cursor = 0;
+    const total = targets.length;
+
+    const launchNext = (): void => {
+      // Epoch check: if navigation moved on (e.g., new album loaded),
+      // stop launching more decodes from this batch.
+      if (this.getEpoch && this.getEpoch() !== myEpoch) return;
+      while (this.inflight.size < this.concurrency && cursor < targets.length) {
+        const p = targets[cursor++]!;
+        this.fetchAndDecode(p, myEpoch)
+          .catch((err) => console.warn('[preload] failed:', p, err?.message ?? err))
+          .finally(() => {
+            completed += 1;
+            onProgress?.({ completed, total });
+            if (cursor < targets.length) launchNext();
+          });
+      }
+    };
+    launchNext();
   }
 
   /**
-   * Force a single fetch+decode+warm; resolves with the ImageBitmap.
-   *
-   * If `epoch` is provided and no longer matches `getEpoch()` after the
-   * decode completes, the bitmap is closed and NOT admitted to the cache.
-   * The resolved value will be `null` in that case so callers know to bail.
+   * Force a single fetch+decode+warm. Returns the bitmap, or null if it
+   * couldn't be admitted (stale, in-flight collision, or read error).
    */
   async fetchAndDecode(filePath: string, epoch?: number): Promise<ImageBitmap | null> {
     if (this.governor.has(filePath)) {
@@ -102,21 +121,18 @@ export class PreloadQueue {
     const myEpoch = epoch ?? (this.getEpoch ? this.getEpoch() : undefined);
     try {
       const bytes = await window.api.readFile(filePath);
-      // Slice to a clean ArrayBuffer (not SharedArrayBuffer) for Blob.
       const ab = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
       const blob = new Blob([ab], { type: mimeFor(filePath) });
       const bitmap = await createImageBitmap(blob);
-      // Epoch check: if navigation moved on since we started, discard.
       if (myEpoch !== undefined && this.getEpoch && this.getEpoch() !== myEpoch) {
         try {
           (bitmap as unknown as { close?: () => void }).close?.();
         } catch {
-          // best-effort; ignore
+          /* ignore */
         }
         return null;
       }
       this.governor.admit(filePath, bitmap as unknown as { width: number; height: number; close?: () => void });
-      // GPU pre-warm: draw once to a 1x1 scratch surface.
       if (this.warmCtx) {
         this.warmCtx.clearRect(0, 0, 1, 1);
         this.warmCtx.drawImage(bitmap, 0, 0, 1, 1);
@@ -128,8 +144,3 @@ export class PreloadQueue {
     }
   }
 }
-
-// Re-export for callers
-export { PRELOAD_RADIUS };
-// Suppress unused import for `path` if tsc strict
-void path;

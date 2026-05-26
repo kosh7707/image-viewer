@@ -1,48 +1,66 @@
+import type { AlbumEntryDTO } from '../preload/api';
+
 export interface AlbumState {
   folder: string;
-  paths: string[];
+  entries: AlbumEntryDTO[];
   currentIndex: number;
 }
 
 export class Album {
-  state: AlbumState = { folder: '', paths: [], currentIndex: 0 };
+  state: AlbumState = { folder: '', entries: [], currentIndex: 0 };
 
-  load(folder: string, paths: string[], currentIndex: number): void {
+  load(folder: string, entries: AlbumEntryDTO[], currentIndex: number): void {
     this.state.folder = folder;
-    this.state.paths = paths.slice();
-    this.state.currentIndex = Math.max(0, Math.min(currentIndex, paths.length - 1));
+    this.state.entries = entries.slice();
+    this.state.currentIndex = Math.max(0, Math.min(currentIndex, entries.length - 1));
+  }
+
+  /** Replace entries (e.g., after a sort) and reindex to the path that was current. */
+  reorder(entries: AlbumEntryDTO[], newCurrentIndex: number): void {
+    this.state.entries = entries.slice();
+    this.state.currentIndex = Math.max(0, Math.min(newCurrentIndex, entries.length - 1));
   }
 
   current(): string | null {
-    if (this.state.paths.length === 0) return null;
-    return this.state.paths[this.state.currentIndex] ?? null;
+    if (this.state.entries.length === 0) return null;
+    return this.state.entries[this.state.currentIndex]?.path ?? null;
   }
 
   next(): string | null {
-    if (this.state.paths.length === 0) return null;
-    this.state.currentIndex = (this.state.currentIndex + 1) % this.state.paths.length;
+    if (this.state.entries.length === 0) return null;
+    this.state.currentIndex = (this.state.currentIndex + 1) % this.state.entries.length;
     return this.current();
   }
 
   prev(): string | null {
-    if (this.state.paths.length === 0) return null;
+    if (this.state.entries.length === 0) return null;
     this.state.currentIndex =
-      (this.state.currentIndex - 1 + this.state.paths.length) % this.state.paths.length;
+      (this.state.currentIndex - 1 + this.state.entries.length) % this.state.entries.length;
     return this.current();
   }
 
   pathAt(idx: number): string | null {
-    if (this.state.paths.length === 0) return null;
-    const len = this.state.paths.length;
+    if (this.state.entries.length === 0) return null;
+    const len = this.state.entries.length;
     const wrapped = ((idx % len) + len) % len;
-    return this.state.paths[wrapped] ?? null;
+    return this.state.entries[wrapped]?.path ?? null;
   }
 
   size(): number {
-    return this.state.paths.length;
+    return this.state.entries.length;
   }
 
   index(): number {
     return this.state.currentIndex;
+  }
+
+  /** Snapshot of current paths in order (legacy convenience for preload-queue). */
+  paths(): string[] {
+    return this.state.entries.map((e) => e.path);
+  }
+
+  /** Snapshot of full entries (path + mtime), for sort dialog. */
+  entries(): AlbumEntryDTO[] {
+    return this.state.entries.slice();
   }
 }
