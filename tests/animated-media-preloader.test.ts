@@ -87,6 +87,64 @@ test('AnimatedMediaPreloader schedule can preserve current media after a cap red
   assert.equal(cache.has('/far.gif'), false);
 });
 
+test('AnimatedMediaPreloader stops scheduling once the preload memory budget is planned', async () => {
+  const cache = new PreparedMediaCache(250);
+  const calls: string[] = [];
+  const preloader = new AnimatedMediaPreloader(cache, async (entry) => {
+    calls.push(entry.path);
+    return media(entry.path, 100);
+  });
+
+  await preloader.schedule(
+    [entry('/a.gif'), entry('/b.gif'), entry('/c.gif'), entry('/d.gif')],
+    0,
+    {
+      estimateBytes: () => 100,
+    },
+  );
+
+  assert.deepEqual(calls, ['/a.gif', '/b.gif']);
+  assert.equal(cache.totalBytes(), 200);
+  assert.equal(cache.has('/c.gif'), false);
+  assert.equal(cache.has('/d.gif'), false);
+});
+
+test('AnimatedMediaPreloader aborts stale in-flight preparations when navigation reschedules', async () => {
+  const cache = new PreparedMediaCache(1_000);
+  const started = new Set<string>();
+  const aborted: string[] = [];
+  const release = new Map<string, () => void>();
+  const preloader = new AnimatedMediaPreloader(
+    cache,
+    (entry, { signal }) =>
+      new Promise<PreparedMedia | null>((resolve) => {
+        started.add(entry.path);
+        signal.addEventListener(
+          'abort',
+          () => {
+            aborted.push(entry.path);
+            resolve(null);
+          },
+          { once: true },
+        );
+        release.set(entry.path, () => resolve(media(entry.path, 100)));
+      }),
+  );
+
+  const first = preloader.schedule([entry('/old.gif')], 0, { estimateBytes: () => 100 });
+  await waitFor(() => started.has('/old.gif'));
+
+  const second = preloader.schedule([entry('/new.gif')], 0, { estimateBytes: () => 100 });
+  await waitFor(() => started.has('/new.gif'));
+  release.get('/new.gif')?.();
+
+  await Promise.all([first, second]);
+
+  assert.deepEqual(aborted, ['/old.gif']);
+  assert.equal(cache.has('/old.gif'), false);
+  assert.equal(cache.has('/new.gif'), true);
+});
+
 function entries(): AlbumEntryDTO[] {
   return [
     entry('/a.gif'),
@@ -95,6 +153,14 @@ function entries(): AlbumEntryDTO[] {
     entry('/d.gif'),
     { path: '/e.webp', mtimeMs: 1, frameCount: 1 },
   ];
+}
+
+async function waitFor(predicate: () => boolean): Promise<void> {
+  for (let i = 0; i < 20; i += 1) {
+    if (predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+  throw new Error('condition was not met');
 }
 
 function entry(path: string): AlbumEntryDTO {

@@ -16,6 +16,8 @@ interface FakeTrack {
 
 interface FakeVideoFrame {
   duration: number | null;
+  displayWidth: number;
+  displayHeight: number;
   closed: boolean;
   failBitmap?: boolean;
   close(): void;
@@ -94,6 +96,8 @@ class FakeDecoder {
 function makeFrame(duration: number | null, failBitmap = false): FakeVideoFrame {
   return {
     duration,
+    displayWidth: 1,
+    displayHeight: 1,
     closed: false,
     failBitmap,
     close() {
@@ -201,6 +205,26 @@ test('decodeAnimatedWebp closes accumulated resources when conversion fails', as
   const result = await decodeAnimatedWebp(new Uint8Array([1]), {
     imageDecoder: FakeDecoder as unknown as ImageDecoderConstructorLike,
     createImageBitmap: makeCreateImageBitmap(bitmaps),
+  });
+
+  assert.equal(result, null);
+  assert.equal(frame0.closed, true);
+  assert.equal(frame1.closed, true);
+  assert.equal(bitmaps[0]!.closed, true);
+  assert.equal(FakeDecoder.instances[0]!.closed, true);
+});
+
+test('decodeAnimatedWebp refuses to materialize frames beyond the decoded-byte cap', async () => {
+  FakeDecoder.reset();
+  const frame0 = makeFrame(100_000);
+  const frame1 = makeFrame(100_000);
+  const bitmaps: FakeBitmap[] = [];
+  FakeDecoder.nextFrames = [frame0, frame1];
+
+  const result = await decodeAnimatedWebp(new Uint8Array([1]), {
+    imageDecoder: FakeDecoder as unknown as ImageDecoderConstructorLike,
+    createImageBitmap: makeCreateImageBitmap(bitmaps),
+    maxDecodedBytes: 4,
   });
 
   assert.equal(result, null);

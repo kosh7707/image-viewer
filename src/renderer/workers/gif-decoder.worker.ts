@@ -17,6 +17,7 @@ declare const self: DedicatedWorkerGlobalScope;
 interface ParseRequest {
   type: 'parse';
   buffer: ArrayBuffer;
+  maxDecodedBytes?: number;
 }
 
 interface ParsedResponse {
@@ -37,16 +38,31 @@ interface ErrorResponse {
 // a malicious GIF from exhausting memory in the worker.
 const MAX_GIF_PIXELS = 64 * 1024 * 1024; // 64 MP
 const MAX_GIF_FRAMES = 5000;
+const DEFAULT_MAX_DECODED_BYTES = 4 * 1024 * 1024 * 1024;
 
 self.onmessage = async (event: MessageEvent<ParseRequest>) => {
   if (!event.data || event.data.type !== 'parse') return;
   try {
     const buffer = event.data.buffer;
+    const maxDecodedBytes = normalizeMaxDecodedBytes(event.data.maxDecodedBytes);
     const gif = parseGIF(buffer);
     // Validate logical-screen dimensions BEFORE decompressing frames.
     const lsdEarly = (gif as unknown as { lsd: { width: number; height: number } }).lsd;
     if (lsdEarly && lsdEarly.width * lsdEarly.height > MAX_GIF_PIXELS) {
       const tooBig: ErrorResponse = { type: 'error', message: 'gif too large' };
+      self.postMessage(tooBig);
+      self.close();
+      return;
+    }
+    const parsedFrameCount = Array.isArray((gif as unknown as { frames?: unknown[] }).frames)
+      ? (gif as unknown as { frames: unknown[] }).frames.length
+      : 0;
+    if (
+      lsdEarly &&
+      parsedFrameCount > 0 &&
+      lsdEarly.width * lsdEarly.height * 4 * parsedFrameCount > maxDecodedBytes
+    ) {
+      const tooBig: ErrorResponse = { type: 'error', message: 'gif decoded frames too large' };
       self.postMessage(tooBig);
       self.close();
       return;
@@ -85,6 +101,14 @@ self.onmessage = async (event: MessageEvent<ParseRequest>) => {
     let totalBytes = 0;
 
     for (const frame of frames) {
+      const nextFrameBytes = fullW * fullH * 4;
+      if (totalBytes + nextFrameBytes > maxDecodedBytes) {
+        closeBitmaps(bitmaps);
+        const tooBig: ErrorResponse = { type: 'error', message: 'gif decoded frames too large' };
+        self.postMessage(tooBig);
+        self.close();
+        return;
+      }
       // Build per-frame ImageData from patch.
       const patchW = frame.dims.width;
       const patchH = frame.dims.height;
@@ -108,7 +132,7 @@ self.onmessage = async (event: MessageEvent<ParseRequest>) => {
       // delay is in 1/100 sec; spec stores ms.
       const delayMs = frame.delay && frame.delay > 0 ? frame.delay : 100;
       delays.push(delayMs);
-      totalBytes += fullW * fullH * 4;
+      totalBytes += nextFrameBytes;
 
       if (frame.disposalType === 2) {
         ctx.clearRect(frame.dims.left, frame.dims.top, patchW, patchH);
@@ -134,5 +158,21 @@ self.onmessage = async (event: MessageEvent<ParseRequest>) => {
     self.postMessage(msg);
   }
 };
+
+function normalizeMaxDecodedBytes(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0
+    ? value
+    : DEFAULT_MAX_DECODED_BYTES;
+}
+
+function closeBitmaps(bitmaps: ImageBitmap[]): void {
+  for (const bitmap of bitmaps) {
+    try {
+      bitmap.close();
+    } catch {
+      // ignore
+    }
+  }
+}
 
 export {};

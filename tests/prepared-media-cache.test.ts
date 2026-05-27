@@ -102,6 +102,36 @@ test('PreparedMediaCache can insert oversized current media with explicit protec
   assert.equal(oversized.disposed, 0);
 });
 
+test('PreparedMediaCache can proactively evict far entries before a decode reservation', () => {
+  const cache = new PreparedMediaCache(100);
+  cache.setOrder(['/a.gif', '/b.gif', '/c.gif']);
+  cache.setCurrentIndex(0);
+  const current = media('/a.gif', 30);
+  const near = media('/b.gif', 30);
+  const far = media('/c.gif', 30);
+  cache.put(current);
+  cache.put(near);
+  cache.put(far);
+
+  assert.equal(cache.makeRoomFor(50, { protectCurrent: true }), true);
+
+  assert.equal(cache.has('/a.gif'), true, 'current entry is protected');
+  assert.equal(cache.totalBytes(), 30, 'enough old entries are evicted before decoding');
+  assert.equal(near.disposed + far.disposed, 2);
+});
+
+test('PreparedMediaCache refuses a reservation that only protected media could satisfy', () => {
+  const cache = new PreparedMediaCache(40);
+  cache.setOrder(['/a.gif']);
+  cache.setCurrentIndex(0);
+  const current = media('/a.gif', 40);
+  cache.put(current);
+
+  assert.equal(cache.makeRoomFor(1, { protectCurrent: true }), false);
+  assert.equal(cache.has('/a.gif'), true);
+  assert.equal(current.disposed, 0);
+});
+
 function media(path: string, bytes: number): PreparedMedia & { disposed: number } {
   return {
     kind: 'animation',

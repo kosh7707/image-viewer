@@ -23,7 +23,10 @@ import { disposeFrames } from './animation-disposal';
 import { SpeedHud } from './speed-hud';
 import { MAX_NATIVE_GIF_BYTES } from './animation-policy';
 import { PreparedMediaCache, type PreparedMedia } from './prepared-media-cache';
-import { AnimatedMediaPreloader } from './animated-media-preloader';
+import {
+  AnimatedMediaPreloader,
+  type AnimatedMediaPrepareContext,
+} from './animated-media-preloader';
 import type { AlbumEntryDTO } from '../preload/api';
 import {
   DEFAULT_USER_PREFERENCES,
@@ -109,14 +112,8 @@ function bumpEpoch(): number {
 }
 preloader.setEpochSupplier(() => albumEpoch);
 
-let activeGifWorker: Worker | null = null;
-
 function stopActiveAnimation(): void {
   gifHost.stop();
-  if (activeGifWorker) {
-    activeGifWorker.terminate();
-    activeGifWorker = null;
-  }
 }
 
 function clearAllSurfaces(): void {
@@ -155,7 +152,11 @@ async function showNativePath(filePath: string, myEpoch: number): Promise<void> 
 }
 
 async function renderPreparedOrGif(current: AlbumEntryDTO, myEpoch: number): Promise<void> {
-  const prepared = await animatedPreloader.ensure(current, album.index());
+  const prepared = await animatedPreloader.ensure(current, album.index(), {
+    estimatedBytes: estimatePreparedMediaBytes(current),
+    protectCurrent: true,
+    reason: 'current',
+  });
   if (myEpoch !== navEpoch) return;
   if (prepared) {
     commitPreparedMedia(prepared);
@@ -165,7 +166,11 @@ async function renderPreparedOrGif(current: AlbumEntryDTO, myEpoch: number): Pro
 }
 
 async function renderPreparedOrWebp(current: AlbumEntryDTO, myEpoch: number): Promise<void> {
-  const prepared = await animatedPreloader.ensure(current, album.index());
+  const prepared = await animatedPreloader.ensure(current, album.index(), {
+    estimatedBytes: estimatePreparedMediaBytes(current),
+    protectCurrent: true,
+    reason: 'current',
+  });
   if (myEpoch !== navEpoch) return;
   if (prepared) {
     commitPreparedMedia(prepared);
@@ -212,8 +217,7 @@ async function renderWebp(current: AlbumEntryDTO, myEpoch: number): Promise<void
     }
 
     stopActiveAnimation();
-    nativeImageHost.showBytes(bytes, 'image/webp');
-    painter.clear();
+    await showNativePath(filePath, myEpoch);
   } catch (err) {
     console.warn('[render] webp failed:', filePath, err);
     if (myEpoch === navEpoch) painter.clear();
@@ -252,9 +256,7 @@ async function renderGif(current: AlbumEntryDTO, myEpoch: number): Promise<void>
     const bytes = await window.api.readFile(filePath);
     if (myEpoch !== navEpoch) return;
     if (bytes.byteLength > MAX_NATIVE_GIF_BYTES) {
-      stopActiveAnimation();
-      nativeImageHost.showBytes(bytes, 'image/gif');
-      painter.clear();
+      await showNativePath(filePath, myEpoch);
       return;
     }
 
@@ -267,7 +269,9 @@ async function renderGif(current: AlbumEntryDTO, myEpoch: number): Promise<void>
       stopActiveAnimation();
       nativeImageHost.clear();
       gifHost.play({ ...parsed, dispose: () => disposeFrames(parsed.frames) });
+      return;
     }
+    await showNativePath(filePath, myEpoch);
   } catch (err) {
     console.warn('[render] gif failed:', filePath, err);
   }
@@ -356,7 +360,10 @@ function updatePreparedOrder(): void {
 function scheduleAnimatedPreload(options: { protectCurrent?: boolean } = {}): void {
   if (album.size() === 0) return;
   void animatedPreloader
-    .schedule(album.entries(), album.index(), options)
+    .schedule(album.entries(), album.index(), {
+      ...options,
+      estimateBytes: estimatePreparedMediaBytes,
+    })
     .catch((err) => console.warn('[animated preload] failed:', err));
 }
 
@@ -367,14 +374,27 @@ function shouldPrepareNative(entry: AlbumEntryDTO): boolean {
   return typeof encoded === 'number' && encoded > MAX_NATIVE_GIF_BYTES;
 }
 
-async function prepareAnimatedMedia(entry: AlbumEntryDTO): Promise<PreparedMedia | null> {
+async function prepareAnimatedMedia(
+  entry: AlbumEntryDTO,
+  context?: AnimatedMediaPrepareContext,
+): Promise<PreparedMedia | null> {
+  const signal = context?.signal;
   try {
+    if (signal?.aborted) return null;
     if (shouldPrepareNative(entry)) return await prepareNativeMedia(entry);
 
     if (mediaKindForEntry(entry) === 'animated-gif') {
       const bytes = await window.api.readFile(entry.path);
+      if (signal?.aborted) return null;
       if (bytes.byteLength > MAX_NATIVE_GIF_BYTES) return await prepareNativeMedia(entry);
-      const decoded = await decodeGifBytes(bytes);
+      const decoded = await decodeGifBytes(bytes, {
+        signal,
+        maxDecodedBytes: preparedMediaCache.limitBytes(),
+      });
+      if (signal?.aborted) {
+        if (decoded) disposeFrames(decoded.frames);
+        return null;
+      }
       if (!decoded || decoded.frames.length === 0) return await prepareNativeMedia(entry);
       const decodedBytes =
         decoded.totalBytes || estimateAnimationBytes(entry, decoded.frames.length);
@@ -393,7 +413,15 @@ async function prepareAnimatedMedia(entry: AlbumEntryDTO): Promise<PreparedMedia
     }
 
     const bytes = await window.api.readFile(entry.path);
-    const animation = await decodeAnimatedWebp(bytes);
+    if (signal?.aborted) return null;
+    const animation = await decodeAnimatedWebp(bytes, {
+      signal,
+      maxDecodedBytes: preparedMediaCache.limitBytes(),
+    });
+    if (signal?.aborted) {
+      animation?.dispose?.();
+      return null;
+    }
     if (!animation) return await prepareNativeMedia(entry);
     const bytesEstimate = estimateAnimationBytes(entry, animation.frames.length);
     if (bytesEstimate > preparedMediaCache.limitBytes()) {
@@ -416,26 +444,12 @@ async function prepareAnimatedMedia(entry: AlbumEntryDTO): Promise<PreparedMedia
 
 async function prepareNativeMedia(entry: AlbumEntryDTO): Promise<PreparedMedia | null> {
   const url = await window.api.fileUrl(entry.path);
-  await waitForNativeImageReady(url);
   return {
     kind: 'native',
     path: entry.path,
     url,
     bytes: Math.max(1, entry.encodedBytes ?? 1),
   };
-}
-
-async function waitForNativeImageReady(url: string): Promise<void> {
-  const img = new Image();
-  img.src = url;
-  if (typeof img.decode === 'function') {
-    await img.decode();
-    return;
-  }
-  await new Promise<void>((resolve, reject) => {
-    img.onload = () => resolve();
-    img.onerror = () => reject(new Error('native image failed to load'));
-  });
 }
 
 function estimateAnimationBytes(entry: AlbumEntryDTO, frameCount: number): number {
@@ -446,9 +460,27 @@ function estimateAnimationBytes(entry: AlbumEntryDTO, frameCount: number): numbe
   return Math.max(1, entry.encodedBytes ?? 1);
 }
 
+function estimatePreparedMediaBytes(entry: AlbumEntryDTO): number | null {
+  if (!isFinitePositive(entry.encodedBytes) && !isFinitePositive(entry.allFramesDecodedBytes)) {
+    return null;
+  }
+  if (shouldPrepareNative(entry)) return Math.max(1, entry.encodedBytes ?? 1);
+  if (isFinitePositive(entry.allFramesDecodedBytes)) return entry.allFramesDecodedBytes!;
+  if (entry.width && entry.height && entry.frameCount) {
+    return estimateAnimationBytes(entry, entry.frameCount);
+  }
+  return Math.max(1, entry.encodedBytes ?? 1);
+}
+
+function isFinitePositive(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0;
+}
+
 async function decodeGifBytes(
   bytes: Uint8Array,
+  options: { signal?: AbortSignal; maxDecodedBytes?: number } = {},
 ): Promise<{ frames: ImageBitmap[]; delays: number[]; totalBytes: number } | null> {
+  if (options.signal?.aborted) return null;
   const cleanBuf = bytes.buffer.slice(
     bytes.byteOffset,
     bytes.byteOffset + bytes.byteLength,
@@ -456,11 +488,25 @@ async function decodeGifBytes(
   const workerUrl = new URL('workers/gif-decoder.worker.js', document.baseURI).toString();
   const worker = new Worker(workerUrl, { type: 'classic' });
   return await new Promise((resolve) => {
+    const cleanup = (): void => {
+      options.signal?.removeEventListener('abort', onAbort);
+    };
+    const finish = (
+      parsed: { frames: ImageBitmap[]; delays: number[]; totalBytes: number } | null,
+    ): void => {
+      cleanup();
+      resolve(parsed);
+    };
+    const onAbort = (): void => {
+      worker.terminate();
+      finish(null);
+    };
+    options.signal?.addEventListener('abort', onAbort, { once: true });
     worker.onmessage = (ev: MessageEvent) => {
       const data = ev.data;
       if (data?.type === 'parsed') {
         worker.terminate();
-        resolve({
+        finish({
           frames: data.frames as ImageBitmap[],
           delays: data.delays as number[],
           totalBytes: Number(data.totalBytes ?? 0),
@@ -468,14 +514,21 @@ async function decodeGifBytes(
       } else if (data?.type === 'error') {
         worker.terminate();
         console.warn('[gif worker]', data.message);
-        resolve(null);
+        finish(null);
       }
     };
     worker.onerror = (e) => {
       worker.terminate();
       console.warn('[gif worker error]', e);
-      resolve(null);
+      finish(null);
     };
-    worker.postMessage({ type: 'parse', buffer: cleanBuf }, [cleanBuf]);
+    worker.postMessage(
+      {
+        type: 'parse',
+        buffer: cleanBuf,
+        maxDecodedBytes: options.maxDecodedBytes,
+      },
+      [cleanBuf],
+    );
   });
 }

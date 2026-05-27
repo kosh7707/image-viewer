@@ -66,11 +66,26 @@ export class PreparedMediaCache {
     return this.entries.has(path);
   }
 
+  bytesFor(path: string): number | null {
+    return this.entries.get(path)?.media.bytes ?? null;
+  }
+
   get(path: string): PreparedMedia | null {
     const entry = this.entries.get(path);
     if (!entry) return null;
     entry.lastUsed = ++this.clock;
     return entry.media;
+  }
+
+  makeRoomFor(bytes: number, options: EnforceLimitOptions = {}): boolean {
+    const requestedBytes = Math.max(0, Math.floor(bytes));
+    const protectedPaths = this.protectedPaths(options);
+    while (this.totalBytes() + requestedBytes > this.maxBytes) {
+      const victim = this.pickVictim(protectedPaths);
+      if (!victim) return false;
+      this.delete(victim);
+    }
+    return true;
   }
 
   put(media: PreparedMedia, options: EnforceLimitOptions = {}): boolean {
