@@ -115,6 +115,48 @@ body {
   transform: translateY(0);
 }
 
+.position-hud {
+  position: fixed;
+  top: 24px;
+  left: 24px;
+  z-index: 9999;
+  pointer-events: none;
+  max-width: min(320px, 42vw);
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: rgba(24, 24, 24, 0.58);
+  color: rgba(255, 255, 255, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.32);
+  opacity: 0;
+  transform: translateY(-4px);
+  transition:
+    opacity 160ms ease,
+    transform 160ms ease;
+}
+
+.position-hud.active {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.position-hud-count {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.position-hud-name {
+  margin-top: 2px;
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 11px;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 #dialog-host {
   position: absolute;
   top: 0;
@@ -123,6 +165,130 @@ body {
   height: 100%;
   pointer-events: none;
   z-index: 10000;
+}
+
+.preload-panel {
+  position: fixed;
+  top: 88px;
+  right: 24px;
+  z-index: 1;
+  width: min(240px, 28vw);
+  max-height: calc(100vh - 128px);
+  overflow: hidden;
+  pointer-events: auto;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  background: rgba(18, 18, 18, 0.5);
+  color: rgba(255, 255, 255, 0.88);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.32);
+  opacity: 0.22;
+  transform: translateX(4px);
+  transition:
+    opacity 160ms ease,
+    transform 160ms ease,
+    background 160ms ease;
+}
+
+.preload-panel:hover,
+.preload-panel.active,
+.preload-panel.pinned {
+  opacity: 0.82;
+  transform: translateX(0);
+  background: rgba(18, 18, 18, 0.72);
+}
+
+.preload-panel.empty {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.preload-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px 3px;
+}
+
+.preload-panel-title {
+  color: rgba(255, 255, 255, 0.76);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.preload-panel-pin {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.72);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 24px;
+}
+
+.preload-panel-pin:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.96);
+}
+
+.preload-panel-summary {
+  padding: 0 10px 7px;
+  color: rgba(255, 255, 255, 0.56);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+}
+
+.preload-panel-list {
+  max-height: calc(100vh - 188px);
+  overflow: hidden;
+  padding: 0 6px 8px;
+}
+
+.preload-panel-row {
+  display: grid;
+  grid-template-columns: 16px 34px minmax(0, 1fr) 18px;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 5px;
+  border-radius: 7px;
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.preload-panel-row.current {
+  background: rgba(120, 180, 255, 0.15);
+  color: rgba(255, 255, 255, 0.96);
+}
+
+.preload-panel-row.loading {
+  color: rgba(255, 255, 255, 0.62);
+}
+
+.preload-panel-marker,
+.preload-panel-index,
+.preload-panel-kind {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.preload-panel-marker {
+  color: rgba(120, 180, 255, 0.88);
+}
+
+.preload-panel-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preload-panel-kind {
+  color: rgba(255, 255, 255, 0.44);
+  text-align: right;
 }
 
 .sort-dialog-overlay {

@@ -28,6 +28,10 @@ export interface AnimatedScheduleOptions extends EnforceLimitOptions {
   estimateBytes?: EstimatePreparedMediaBytes;
 }
 
+export interface AnimatedMediaPreloaderOptions {
+  onChange?: () => void;
+}
+
 interface InflightPreparation {
   controller: AbortController;
   promise: Promise<PreparedMedia | null>;
@@ -40,10 +44,16 @@ export class AnimatedMediaPreloader {
   private generation = 0;
   private scheduleGeneration = 0;
   private activeProtectedPaths = new Set<string>();
+  private onChange?: () => void;
 
-  constructor(cache: PreparedMediaCache, prepare: AnimatedMediaPreparer) {
+  constructor(
+    cache: PreparedMediaCache,
+    prepare: AnimatedMediaPreparer,
+    options: AnimatedMediaPreloaderOptions = {},
+  ) {
     this.cache = cache;
     this.prepare = prepare;
+    this.onChange = options.onChange;
   }
 
   async ensure(
@@ -93,6 +103,7 @@ export class AnimatedMediaPreloader {
           this.cache.put(media, {
             protectCurrent: protectCurrent || this.activeProtectedPaths.has(media.path),
           });
+          this.notifyChange();
           return this.cache.get(media.path);
         }
         return null;
@@ -100,9 +111,11 @@ export class AnimatedMediaPreloader {
       .finally(() => {
         if (this.inflight.get(entry.path)?.promise === promise) {
           this.inflight.delete(entry.path);
+          this.notifyChange();
         }
       });
     this.inflight.set(entry.path, { controller, promise });
+    this.notifyChange();
     return await promise;
   }
 
@@ -170,6 +183,11 @@ export class AnimatedMediaPreloader {
     this.scheduleGeneration += 1;
     this.abortInflightExcept(new Set());
     this.inflight.clear();
+    this.notifyChange();
+  }
+
+  isPreparing(path: string): boolean {
+    return this.inflight.has(path);
   }
 
   private planSchedule(
@@ -198,10 +216,17 @@ export class AnimatedMediaPreloader {
   }
 
   private abortInflightExcept(retainedPaths: Set<string>): void {
+    let aborted = false;
     for (const [path, preparation] of this.inflight) {
       if (retainedPaths.has(path)) continue;
       preparation.controller.abort();
+      aborted = true;
     }
+    if (aborted) this.notifyChange();
+  }
+
+  private notifyChange(): void {
+    this.onChange?.();
   }
 }
 

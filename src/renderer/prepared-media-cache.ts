@@ -70,6 +70,10 @@ export class PreparedMediaCache {
     return this.entries.get(path)?.media.bytes ?? null;
   }
 
+  kindFor(path: string): PreparedMedia['kind'] | null {
+    return this.entries.get(path)?.media.kind ?? null;
+  }
+
   get(path: string): PreparedMedia | null {
     const entry = this.entries.get(path);
     if (!entry) return null;

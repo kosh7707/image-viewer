@@ -21,6 +21,8 @@ import { NativeImageHost } from './native-image-host';
 import { decodeAnimatedWebp } from './animated-webp-decoder';
 import { disposeFrames } from './animation-disposal';
 import { SpeedHud } from './speed-hud';
+import { PositionHud } from './position-hud';
+import { PreloadPanel, type PreloadPanelItem, type PreloadPanelItemKind } from './preload-panel';
 import { MAX_NATIVE_GIF_BYTES } from './animation-policy';
 import { PreparedMediaCache, type PreparedMedia } from './prepared-media-cache';
 import {
@@ -52,18 +54,24 @@ let currentPreferences: UserPreferences = DEFAULT_USER_PREFERENCES;
 const preparedMediaCache = new PreparedMediaCache(
   currentPreferences.preload.animatedMemoryLimitBytes,
 );
-const animatedPreloader = new AnimatedMediaPreloader(preparedMediaCache, prepareAnimatedMedia);
+const animatedPreloader = new AnimatedMediaPreloader(preparedMediaCache, prepareAnimatedMedia, {
+  onChange: () => refreshPreloadPanel(),
+});
 
 const rssToast = new RssToast(toastHost);
 rssToast.install();
 const progressToast = new ProgressToast(toastHost);
 const speedHud = new SpeedHud(toastHost);
+const positionHud = new PositionHud(toastHost);
+const preloadPanel = new PreloadPanel(dialogHost);
 
 const sortDialog = new SortDialog(dialogHost, {
   onSortChange: (entries, newIdx) => {
     album.reorder(entries, newIdx);
     bumpEpoch();
     updatePreparedOrder();
+    showPositionHud();
+    refreshPreloadPanel({ reveal: true });
     scheduleAnimatedPreload();
     void renderCurrent();
   },
@@ -72,6 +80,8 @@ const sortDialog = new SortDialog(dialogHost, {
     album.state.currentIndex = idx;
     bumpEpoch();
     updatePreparedOrder();
+    showPositionHud();
+    refreshPreloadPanel({ reveal: true });
     scheduleAnimatedPreload();
     void renderCurrent();
   },
@@ -238,6 +248,7 @@ async function renderStatic(filePath: string, myEpoch: number): Promise<void> {
       stopActiveAnimation();
       nativeImageHost.clear();
       painter.drawImage(bitmap);
+      refreshPreloadPanel();
     }
   } catch (err) {
     console.warn('[render] static failed:', filePath, err);
@@ -282,6 +293,8 @@ installKeyboard({
     bumpEpoch();
     album.prev();
     updatePreparedOrder();
+    showPositionHud();
+    refreshPreloadPanel({ reveal: true });
     scheduleAnimatedPreload();
     void renderCurrent();
   },
@@ -289,6 +302,8 @@ installKeyboard({
     bumpEpoch();
     album.next();
     updatePreparedOrder();
+    showPositionHud();
+    refreshPreloadPanel({ reveal: true });
     scheduleAnimatedPreload();
     void renderCurrent();
   },
@@ -315,9 +330,12 @@ window.api.onAlbumLoad((payload) => {
   animatedPreloader.clear();
   album.load(payload.folder, payload.entries, payload.currentIndex);
   updatePreparedOrder();
+  showPositionHud();
+  refreshPreloadPanel({ reveal: true });
   void renderCurrent();
   preloader.scheduleAll(album.entries(), albumEpoch, ({ completed, total }) => {
     progressToast.update({ phase: 'preloading', completed, total });
+    refreshPreloadPanel();
   });
   scheduleAnimatedPreload();
 });
@@ -348,6 +366,8 @@ window.api.onSettingsRequest(() => {
   nativeImageHost,
   preparedMediaCache,
   animatedPreloader,
+  positionHud,
+  preloadPanel,
   sortDialog,
   settingsDialog,
 };
@@ -355,6 +375,7 @@ window.api.onSettingsRequest(() => {
 function updatePreparedOrder(): void {
   preparedMediaCache.setOrder(album.entries().map((entry) => entry.path));
   preparedMediaCache.setCurrentIndex(album.index());
+  refreshPreloadPanel();
 }
 
 function scheduleAnimatedPreload(options: { protectCurrent?: boolean } = {}): void {
@@ -365,6 +386,81 @@ function scheduleAnimatedPreload(options: { protectCurrent?: boolean } = {}): vo
       estimateBytes: estimatePreparedMediaBytes,
     })
     .catch((err) => console.warn('[animated preload] failed:', err));
+}
+
+function showPositionHud(): void {
+  positionHud.show({
+    index: album.index(),
+    total: album.size(),
+    path: album.current(),
+  });
+}
+
+function refreshPreloadPanel(options: { reveal?: boolean } = {}): void {
+  preloadPanel.update(
+    {
+      currentIndex: album.index(),
+      total: album.size(),
+      items: buildPreloadPanelItems(),
+    },
+    options,
+  );
+}
+
+function buildPreloadPanelItems(): PreloadPanelItem[] {
+  const entries = album.entries();
+  const total = entries.length;
+  if (total === 0) return [];
+  const currentIndex = album.index();
+  const offsets = nearbyOffsets(total);
+  const items: PreloadPanelItem[] = [];
+
+  for (const offset of offsets) {
+    const index = wrapIndex(currentIndex + offset, total);
+    const entry = entries[index];
+    if (!entry) continue;
+    const isCurrent = index === currentIndex;
+    const animatedKind = preparedMediaCache.kindFor(entry.path);
+    const isStaticReady = governor.has(entry.path);
+    const isLoading = animatedPreloader.isPreparing(entry.path);
+    if (!isCurrent && !animatedKind && !isStaticReady && !isLoading) continue;
+    items.push({
+      index,
+      path: entry.path,
+      state: isCurrent ? 'current' : isLoading ? 'loading' : 'ready',
+      kind: preloadPanelKind(entry, animatedKind, isStaticReady),
+    });
+  }
+
+  return items;
+}
+
+function nearbyOffsets(total: number): number[] {
+  const raw = [-3, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8];
+  const seen = new Set<number>();
+  const offsets: number[] = [];
+  for (const offset of raw) {
+    const normalized = wrapIndex(offset, total);
+    if (seen.has(normalized)) continue;
+    seen.add(normalized);
+    offsets.push(offset);
+  }
+  return offsets;
+}
+
+function wrapIndex(index: number, total: number): number {
+  return ((index % total) + total) % total;
+}
+
+function preloadPanelKind(
+  entry: AlbumEntryDTO,
+  animatedKind: PreparedMedia['kind'] | null,
+  isStaticReady: boolean,
+): PreloadPanelItemKind {
+  if (animatedKind === 'animation') return 'animation';
+  if (animatedKind === 'native') return 'native';
+  if (isStaticReady || mediaKindForEntry(entry) === 'static-bitmap') return 'static';
+  return 'animation';
 }
 
 function shouldPrepareNative(entry: AlbumEntryDTO): boolean {

@@ -251,6 +251,25 @@ async function main() {
     currentIndex: 0,
   });
 
+  await waitFor(
+    win,
+    `(() => {
+      const hud = document.querySelector('.position-hud');
+      const panel = document.querySelector('.preload-panel');
+      return Boolean(
+        hud &&
+          hud.classList.contains('active') &&
+          hud.textContent.includes('1 / 1') &&
+          panel &&
+          panel.textContent.includes('Ready') &&
+          panel.textContent.includes('1 / 1')
+      );
+    })()`,
+    2_000,
+    'position HUD and preload panel',
+  );
+  trace('viewer:status-ui');
+
   const decoded = await waitFor(
     win,
     '(() => { const h = window.__viewer && window.__viewer.gifHost; return h && h.gif && h.gif.frames.length >= 2; })()',
