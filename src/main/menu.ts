@@ -44,6 +44,12 @@ export function showContextMenu(win: BrowserWindow, point?: MenuPoint): void {
         win.webContents.send('menu:sort-request');
       },
     },
+    {
+      label: 'Settings...',
+      click: () => {
+        win.webContents.send('menu:settings-request');
+      },
+    },
     { type: 'separator' },
     {
       label: `Speed: ${menuState.speedMultiplier.toFixed(1)}x`,

@@ -67,6 +67,7 @@ function installIpc() {
   ipcMain.handle('window:toggleFullscreen', () => false);
   ipcMain.handle('menu:show', () => undefined);
   ipcMain.handle('speed:update', () => undefined);
+  ipcMain.handle('preferences:get', () => ({ animation: { speedMultiplier: 1.0 } }));
   ipcMain.handle('app:quit', () => app.quit());
   ipcMain.handle('dialog:openFile', () => undefined);
   ipcMain.handle('dialog:openFolder', () => undefined);
@@ -431,7 +432,7 @@ async function main() {
         height: 4,
         frameCount: 2,
         estimatedBytes: 0,
-        allFramesDecodedBytes: 512 * 1024 * 1024 + 1,
+        allFramesDecodedBytes: 4 * 1024 * 1024 * 1024 + 1,
         playbackBytes: 4 * 4 * 4 * 2,
       },
     ],

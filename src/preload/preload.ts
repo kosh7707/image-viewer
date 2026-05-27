@@ -6,6 +6,9 @@ const api = {
   showContextMenu: (point?: { x: number; y: number }): Promise<void> =>
     ipcRenderer.invoke('menu:show', point),
   updateSpeed: (speed: number): Promise<void> => ipcRenderer.invoke('speed:update', speed),
+  getPreferences: () => ipcRenderer.invoke('preferences:get'),
+  updateAnimatedPreloadMemoryLimit: (bytes: number) =>
+    ipcRenderer.invoke('preload-limit:update', bytes),
   readFile: async (filePath: string): Promise<Uint8Array> => {
     const buf = (await ipcRenderer.invoke('fs:readFile', filePath)) as Buffer | Uint8Array;
     return new Uint8Array(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength));
@@ -33,6 +36,11 @@ const api = {
     const listener = () => cb();
     ipcRenderer.on('menu:sort-request', listener);
     return () => ipcRenderer.removeListener('menu:sort-request', listener);
+  },
+  onSettingsRequest: (cb: () => void): (() => void) => {
+    const listener = () => cb();
+    ipcRenderer.on('menu:settings-request', listener);
+    return () => ipcRenderer.removeListener('menu:settings-request', listener);
   },
 };
 

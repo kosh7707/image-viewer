@@ -14,7 +14,9 @@ export function installContextMenu(getSpeed: () => number): () => void {
     lastOpenAt = now;
 
     // Push current speed before the menu opens so the label is fresh.
-    void window.api.updateSpeed(getSpeed());
+    void window.api
+      .updateSpeed(getSpeed())
+      .catch((err) => console.warn('[menu] failed to persist speed:', err));
     void window.api.showContextMenu({ x: e.clientX, y: e.clientY });
   };
 
@@ -36,5 +38,7 @@ export function installContextMenu(getSpeed: () => number): () => void {
 }
 
 export function pushSpeed(speed: number): void {
-  void window.api.updateSpeed(speed);
+  void window.api
+    .updateSpeed(speed)
+    .catch((err) => console.warn('[menu] failed to persist speed:', err));
 }

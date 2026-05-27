@@ -83,3 +83,16 @@ test('GifHost disposes owned animation frames on replacement and stop', () => {
   host.stop();
   assert.equal(disposed, 2, 'second stop does not double-dispose');
 });
+
+test('GifHost does not dispose cache-owned animations when no disposer is supplied', () => {
+  resetRaf();
+  const draws: unknown[] = [];
+  const host = new GifHost(makePainter(draws));
+  let disposed = 0;
+  const frame = { width: 1, height: 1, close: () => (disposed += 1) } as unknown as ImageBitmap;
+
+  host.play({ frames: [frame], delays: [100] });
+  host.stop();
+
+  assert.equal(disposed, 0, 'cache-owned frames remain owned by the prepared-media cache');
+});

@@ -236,3 +236,106 @@ body {
 .sort-dialog-table tbody tr.current {
   background: rgba(120, 180, 255, 0.15);
 }
+
+.settings-dialog-overlay {
+  display: none;
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  pointer-events: auto;
+  align-items: center;
+  justify-content: center;
+}
+
+.settings-dialog-overlay.active {
+  display: flex;
+}
+
+.settings-dialog-panel {
+  width: min(460px, 88vw);
+  background: #1e1e1e;
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+}
+
+.settings-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.settings-dialog-header h2,
+.settings-section h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.settings-dialog-close {
+  background: transparent;
+  border: none;
+  color: #fff;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.settings-section {
+  padding: 16px;
+}
+
+.settings-section p {
+  margin: 8px 0 14px;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.settings-memory-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.settings-memory-options button,
+.settings-actions button {
+  background: #2a2a2a;
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+  padding: 7px 11px;
+  cursor: pointer;
+}
+
+.settings-memory-options button.active {
+  border-color: rgba(120, 180, 255, 0.82);
+  background: rgba(120, 180, 255, 0.18);
+}
+
+.settings-custom-limit {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 13px;
+}
+
+.settings-custom-limit input {
+  width: 86px;
+  background: #2a2a2a;
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 4px;
+  padding: 6px 8px;
+}
+
+.settings-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding: 12px 16px 16px;
+}

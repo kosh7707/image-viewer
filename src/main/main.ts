@@ -12,8 +12,22 @@ import {
 import { toggleFullscreen } from './window';
 import { showContextMenu, menuState } from './menu';
 import { startRssMonitor, stopRssMonitor } from './rss';
+import {
+  loadPreferences,
+  updateAnimatedPreloadMemoryLimit,
+  updateAnimationSpeed,
+} from './preferences';
+import {
+  normalizeAnimatedPreloadMemoryLimitBytes,
+  normalizeAnimationSpeed,
+  type UserPreferences,
+} from '../shared/user-preferences';
 
 let mainWindow: BrowserWindow | null = null;
+
+function userDataDir(): string {
+  return app.getPath('userData');
+}
 
 // Defense-in-depth: the renderer may only read files belonging to the most
 // recently broadcast album. Each entry is an absolute, resolved path string.
@@ -121,10 +135,23 @@ ipcMain.handle('menu:show', (event, point?: { x: number; y: number }) => {
   showContextMenu(win, point);
 });
 
-ipcMain.handle('speed:update', (_event, mult: number) => {
+ipcMain.handle('speed:update', async (_event, mult: number) => {
   if (typeof mult === 'number' && Number.isFinite(mult)) {
-    menuState.speedMultiplier = mult;
+    const speed = normalizeAnimationSpeed(mult);
+    menuState.speedMultiplier = speed;
+    await updateAnimationSpeed(userDataDir(), speed);
   }
+});
+
+ipcMain.handle('preferences:get', async (): Promise<UserPreferences> => {
+  return await loadPreferences(userDataDir());
+});
+
+ipcMain.handle('preload-limit:update', async (_event, bytes: number): Promise<UserPreferences> => {
+  return await updateAnimatedPreloadMemoryLimit(
+    userDataDir(),
+    normalizeAnimatedPreloadMemoryLimitBytes(bytes),
+  );
 });
 
 ipcMain.handle('fs:readFile', async (_event, filePath: string) => {
@@ -153,7 +180,11 @@ ipcMain.handle('app:quit', () => {
   app.quit();
 });
 
-app.whenReady().then(createWindow);
+app.whenReady().then(async () => {
+  const prefs = await loadPreferences(userDataDir());
+  menuState.speedMultiplier = prefs.animation.speedMultiplier;
+  createWindow();
+});
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {

@@ -3,6 +3,8 @@
  * The preload script uses contextBridge to expose `window.api` matching this shape.
  */
 
+import type { UserPreferences } from '../shared/user-preferences';
+
 export interface AlbumEntryDTO {
   path: string;
   mtimeMs: number;
@@ -48,6 +50,10 @@ export interface ImageViewerApi {
   showContextMenu(point?: { x: number; y: number }): Promise<void>;
   /** Notify main of current GIF speed (for the menu label). */
   updateSpeed(speed: number): Promise<void>;
+  /** Load persisted user preferences from Electron userData. */
+  getPreferences(): Promise<UserPreferences>;
+  /** Persist the animated preload memory limit. */
+  updateAnimatedPreloadMemoryLimit(bytes: number): Promise<UserPreferences>;
   /** Read an image file as bytes (validated by main). */
   readFile(filePath: string): Promise<Uint8Array>;
   /** Return a validated file:// URL for native browser image playback. */
@@ -66,6 +72,8 @@ export interface ImageViewerApi {
   onAlbumProgress(cb: (payload: AlbumProgressPayload) => void): () => void;
   /** Subscribe to menu:sort-request events (user clicked Sort... in menu). */
   onSortRequest(cb: () => void): () => void;
+  /** Subscribe to menu:settings-request events. */
+  onSettingsRequest(cb: () => void): () => void;
 }
 
 declare global {
