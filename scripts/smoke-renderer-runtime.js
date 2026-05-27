@@ -12,6 +12,7 @@ const { app, BrowserWindow, ipcMain } = require('electron');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { pathToFileURL } = require('node:url');
 
 const ROOT = path.resolve(__dirname, '..');
 const DIST = path.join(ROOT, 'dist', 'src');
@@ -22,6 +23,7 @@ const TWO_FRAME_GIF = Buffer.from(
 );
 
 let tempDir = null;
+const blockedReadBasenames = new Set();
 
 function writeResult(status, details) {
   const resultPath = process.env.IMAGE_VIEWER_SMOKE_RESULT;
@@ -69,8 +71,12 @@ function installIpc() {
   ipcMain.handle('dialog:openFile', () => undefined);
   ipcMain.handle('dialog:openFolder', () => undefined);
   ipcMain.handle('fs:readFile', async (_event, filePath) => {
+    if (blockedReadBasenames.has(path.basename(filePath))) {
+      return await new Promise(() => undefined);
+    }
     return await fs.promises.readFile(filePath);
   });
+  ipcMain.handle('fs:fileUrl', async (_event, filePath) => pathToFileURL(filePath).toString());
 }
 
 async function waitFor(win, expression, timeoutMs, label) {
@@ -290,7 +296,9 @@ async function main() {
         width: 4,
         height: 4,
         frameCount: 2,
-        estimatedBytes: 4 * 4 * 4 * 2,
+        estimatedBytes: 0,
+        allFramesDecodedBytes: 4 * 4 * 4 * 2,
+        playbackBytes: 4 * 4 * 4 * 2,
       },
     ],
     currentIndex: 0,
@@ -413,6 +421,41 @@ async function main() {
   );
   trace('webp:animated-speed');
 
+  win.webContents.send('album:load', {
+    folder: tempDir,
+    entries: [
+      {
+        path: animatedWebpPath,
+        mtimeMs: Date.now(),
+        width: 4,
+        height: 4,
+        frameCount: 2,
+        estimatedBytes: 0,
+        allFramesDecodedBytes: 512 * 1024 * 1024 + 1,
+        playbackBytes: 4 * 4 * 4 * 2,
+      },
+    ],
+    currentIndex: 0,
+  });
+  await waitFor(
+    win,
+    `(() => {
+      const img = document.getElementById('fallback-gif');
+      const h = window.__viewer && window.__viewer.gifHost;
+      return Boolean(
+        img &&
+          img.classList.contains('active') &&
+          img.hidden === false &&
+          img.src.startsWith('file:') &&
+          h &&
+          !h.gif
+      );
+    })()`,
+    5_000,
+    'huge animated WebP native fallback',
+  );
+  trace('webp:animated-native-fallback');
+
   const staticWebpPath = await writeRendererGeneratedStaticWebp(win, tempDir);
   trace('webp:static-fixture');
   win.webContents.send('album:load', {
@@ -425,6 +468,8 @@ async function main() {
         height: 4,
         frameCount: 1,
         estimatedBytes: 4 * 4 * 4,
+        allFramesDecodedBytes: 4 * 4 * 4,
+        playbackBytes: 4 * 4 * 4,
       },
     ],
     currentIndex: 0,
@@ -451,12 +496,58 @@ async function main() {
   );
   trace('webp:static-cache-route');
 
+  const staticRaceBytes = fs.readFileSync(staticWebpPath);
+  const staticRacePaths = [];
+  for (let i = 0; i < 10; i += 1) {
+    const p = path.join(tempDir, `static-race-${i}.webp`);
+    fs.writeFileSync(p, staticRaceBytes);
+    staticRacePaths.push(p);
+    if (i < 8) blockedReadBasenames.add(path.basename(p));
+  }
+  win.webContents.send('album:load', {
+    folder: tempDir,
+    entries: staticRacePaths.map((p) => ({
+      path: p,
+      mtimeMs: Date.now(),
+      width: 4,
+      height: 4,
+      frameCount: 1,
+      estimatedBytes: 4 * 4 * 4,
+      allFramesDecodedBytes: 4 * 4 * 4,
+      playbackBytes: 4 * 4 * 4,
+    })),
+    currentIndex: 0,
+  });
+  await win.webContents.executeJavaScript(
+    `for (let i = 0; i < 9; i += 1) {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    }`,
+    true,
+  );
+  const escapedStaticRacePath = JSON.stringify(staticRacePaths[9]);
+  await waitFor(
+    win,
+    `(() => {
+      const viewer = window.__viewer;
+      return Boolean(
+        viewer &&
+          viewer.album &&
+          viewer.album.index() === 9 &&
+          viewer.governor &&
+          viewer.governor.has(${escapedStaticRacePath})
+      );
+    })()`,
+    5_000,
+    'static preload navigation race',
+  );
+  trace('webp:static-navigation-race');
+
   writeResult('ok', {
     message:
-      'renderer booted, GIF advanced, animated WebP speed HUD worked, and static WebP used canvas/cache',
+      'renderer booted, GIF advanced, animated WebP speed HUD/fallback worked, and static WebP used canvas/cache without nav race',
   });
   console.log(
-    'SMOKE_OK renderer booted, GIF advanced, animated WebP speed HUD worked, and static WebP used canvas/cache',
+    'SMOKE_OK renderer booted, GIF advanced, animated WebP speed HUD/fallback worked, and static WebP used canvas/cache without nav race',
   );
   cleanup();
   app.exit(0);

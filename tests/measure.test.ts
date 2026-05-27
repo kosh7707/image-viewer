@@ -9,14 +9,20 @@ test('measure PNG: returns width*height*4 with frameCount=1', () => {
   assert.equal(r.height, 1);
   assert.equal(r.frameCount, 1);
   assert.equal(r.bytes, 1 * 1 * 4);
+  assert.equal(r.encodedBytes, PNG_1x1.byteLength);
+  assert.equal(r.preloadBytes, 1 * 1 * 4);
+  assert.equal(r.playbackBytes, 1 * 1 * 4);
 });
 
-test('measure GIF single-frame: bytes = w*h*4*1', () => {
+test('measure GIF single-frame: all-frame bytes are distinct from preload bytes', () => {
   const r = estimateFromBuffer(GIF_1x1_1FRAME, '.gif');
   assert.equal(r.width, 1);
   assert.equal(r.height, 1);
   assert.equal(r.frameCount, 1);
   assert.equal(r.bytes, 1 * 1 * 4 * 1);
+  assert.equal(r.encodedBytes, GIF_1x1_1FRAME.byteLength);
+  assert.equal(r.preloadBytes, 0, 'GIFs are not decoded into the static preload cache');
+  assert.equal(r.playbackBytes, 1 * 1 * 4);
 });
 
 test('measure GIF multi-frame: bytes scale with frame count', () => {
@@ -25,14 +31,18 @@ test('measure GIF multi-frame: bytes scale with frame count', () => {
   assert.equal(r.height, 1);
   assert.equal(r.frameCount, 2);
   assert.equal(r.bytes, 1 * 1 * 4 * 2);
+  assert.equal(r.preloadBytes, 0);
+  assert.equal(r.playbackBytes, 1 * 1 * 4 * 2);
 });
 
 test('measure animated WebP: bytes scale with ANMF frame count', () => {
-  const r = estimateFromBuffer(makeAnimatedWebpContainer(3, 2, 2), '.webp');
+  const r = estimateFromBuffer(makeAnimatedWebpContainer(3, 2, 3), '.webp');
   assert.equal(r.width, 3);
   assert.equal(r.height, 2);
-  assert.equal(r.frameCount, 2);
-  assert.equal(r.bytes, 3 * 2 * 4 * 2);
+  assert.equal(r.frameCount, 3);
+  assert.equal(r.bytes, 3 * 2 * 4 * 3);
+  assert.equal(r.preloadBytes, 0, 'animated WebP is not decoded into the static preload cache');
+  assert.equal(r.playbackBytes, 3 * 2 * 4 * 3);
 });
 
 test('measure: unsupported extension throws', () => {
@@ -46,6 +56,7 @@ test('measure: corrupt GIF returns a safe estimate (does not throw)', () => {
   const r = estimateFromBuffer(corrupt, '.gif');
   assert.ok(r.bytes >= 0, 'bytes is non-negative');
   assert.equal(r.frameCount, 0, 'no frames parsed');
+  assert.equal(r.preloadBytes, 0);
 });
 
 test('measure: known dimensions => bytes formula scales', () => {
@@ -65,6 +76,8 @@ test('measure: known dimensions => bytes formula scales', () => {
   assert.equal(r.width, 100);
   assert.equal(r.height, 50);
   assert.equal(r.bytes, 100 * 50 * 4);
+  assert.equal(r.preloadBytes, 100 * 50 * 4);
+  assert.equal(r.playbackBytes, 100 * 50 * 4);
 });
 
 function makeAnimatedWebpContainer(width: number, height: number, frameCount: number): Buffer {

@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
+import { pathToFileURL } from 'url';
 import { SUPPORTED_EXTS } from './folder';
 import {
   executeAlbumLoad,
@@ -30,6 +31,21 @@ export function setAlbumPaths(images: string[]): void {
 }
 
 bindSetAlbumPaths(setAlbumPaths);
+
+function resolveReadableAlbumImage(filePath: string): string {
+  if (typeof filePath !== 'string') {
+    throw new Error('filePath must be a string');
+  }
+  const ext = path.extname(filePath).toLowerCase();
+  if (!(SUPPORTED_EXTS as readonly string[]).includes(ext)) {
+    throw new Error(`Unsupported extension: ${ext}`);
+  }
+  const resolved = path.resolve(filePath);
+  if (!currentAlbumPaths.has(resolved)) {
+    throw new Error('path not in active album');
+  }
+  return resolved;
+}
 
 function pickArgPath(): string | null {
   const candidates = [process.argv[1], process.argv[2]].filter(Boolean) as string[];
@@ -112,18 +128,13 @@ ipcMain.handle('speed:update', (_event, mult: number) => {
 });
 
 ipcMain.handle('fs:readFile', async (_event, filePath: string) => {
-  if (typeof filePath !== 'string') {
-    throw new Error('filePath must be a string');
-  }
-  const ext = path.extname(filePath).toLowerCase();
-  if (!(SUPPORTED_EXTS as readonly string[]).includes(ext)) {
-    throw new Error(`Unsupported extension: ${ext}`);
-  }
-  const resolved = path.resolve(filePath);
-  if (!currentAlbumPaths.has(resolved)) {
-    throw new Error('path not in active album');
-  }
+  const resolved = resolveReadableAlbumImage(filePath);
   return await fs.promises.readFile(resolved);
+});
+
+ipcMain.handle('fs:fileUrl', (_event, filePath: string) => {
+  const resolved = resolveReadableAlbumImage(filePath);
+  return pathToFileURL(resolved).toString();
 });
 
 ipcMain.handle('dialog:openFile', async (event) => {

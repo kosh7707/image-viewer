@@ -48,7 +48,10 @@ type PreloadSource = string | AlbumEntryDTO;
 
 export class PreloadQueue {
   private governor: CacheGovernor;
-  private inflight: Set<string> = new Set();
+  private inflight: Map<
+    string,
+    { epoch: number | undefined; promise: Promise<ImageBitmap | null> }
+  > = new Map();
   private warmCanvas: OffscreenCanvas | null = null;
   private warmCtx: OffscreenCanvasRenderingContext2D | null = null;
   private getEpoch: (() => number) | null = null;
@@ -120,42 +123,62 @@ export class PreloadQueue {
   }
 
   /**
-   * Force a single fetch+decode+warm. Returns the bitmap, or null if it
-   * couldn't be admitted (stale, in-flight collision, or read error).
+   * Force a single fetch+decode+warm. Returns the bitmap, joins matching
+   * in-flight work, or returns null if it couldn't be admitted (stale/animated).
    */
   async fetchAndDecode(filePath: string, epoch?: number): Promise<ImageBitmap | null> {
     if (this.governor.has(filePath)) {
       const e = this.governor.get(filePath);
       return (e?.bitmap as ImageBitmap) ?? null;
     }
-    if (this.inflight.has(filePath)) return null;
-    this.inflight.add(filePath);
     const myEpoch = epoch ?? (this.getEpoch ? this.getEpoch() : undefined);
-    try {
-      const bytes = await window.api.readFile(filePath);
-      if (extOfPath(filePath) === '.webp' && isAnimatedWebpBytes(bytes)) return null;
-      const bitmap = await decodeBitmap(filePath, bytes);
-      if (myEpoch !== undefined && this.getEpoch && this.getEpoch() !== myEpoch) {
-        try {
-          (bitmap as unknown as { close?: () => void }).close?.();
-        } catch {
-          /* ignore */
-        }
-        return null;
+    while (true) {
+      const existing = this.inflight.get(filePath);
+      if (!existing) break;
+      if (existing.epoch === myEpoch) return await existing.promise;
+      await existing.promise.catch(() => null);
+      if (this.governor.has(filePath)) {
+        const e = this.governor.get(filePath);
+        return (e?.bitmap as ImageBitmap) ?? null;
       }
-      this.governor.admit(
-        filePath,
-        bitmap as unknown as { width: number; height: number; close?: () => void },
-      );
-      if (this.warmCtx) {
-        this.warmCtx.clearRect(0, 0, 1, 1);
-        this.warmCtx.drawImage(bitmap, 0, 0, 1, 1);
-      }
-      this.governor.markWarm(filePath);
-      return bitmap;
-    } finally {
-      this.inflight.delete(filePath);
     }
+
+    const promise = this.decodeAndAdmit(filePath, myEpoch);
+    this.inflight.set(filePath, { epoch: myEpoch, promise });
+    try {
+      return await promise;
+    } finally {
+      if (this.inflight.get(filePath)?.promise === promise) {
+        this.inflight.delete(filePath);
+      }
+    }
+  }
+
+  private async decodeAndAdmit(
+    filePath: string,
+    myEpoch: number | undefined,
+  ): Promise<ImageBitmap | null> {
+    const bytes = await window.api.readFile(filePath);
+    if (extOfPath(filePath) === '.webp' && isAnimatedWebpBytes(bytes)) return null;
+    const bitmap = await decodeBitmap(filePath, bytes);
+    if (myEpoch !== undefined && this.getEpoch && this.getEpoch() !== myEpoch) {
+      try {
+        (bitmap as unknown as { close?: () => void }).close?.();
+      } catch {
+        /* ignore */
+      }
+      return null;
+    }
+    this.governor.admit(
+      filePath,
+      bitmap as unknown as { width: number; height: number; close?: () => void },
+    );
+    if (this.warmCtx) {
+      this.warmCtx.clearRect(0, 0, 1, 1);
+      this.warmCtx.drawImage(bitmap, 0, 0, 1, 1);
+    }
+    this.governor.markWarm(filePath);
+    return bitmap;
   }
 }
 

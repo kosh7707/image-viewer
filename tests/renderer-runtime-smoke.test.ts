@@ -9,7 +9,7 @@ import * as path from 'node:path';
 const RUN_SMOKE = process.env.IMAGE_VIEWER_RUN_ELECTRON_SMOKE === '1';
 
 test(
-  'Electron renderer boots, advances GIF, shows animated WebP speed HUD, and caches static WebP',
+  'Electron renderer boots, advances GIF, handles animated WebP fallback, and caches static WebP',
   { skip: RUN_SMOKE ? false : 'set IMAGE_VIEWER_RUN_ELECTRON_SMOKE=1 to run Electron smoke test' },
   async () => {
     const requireFromHere = createRequire(__filename);

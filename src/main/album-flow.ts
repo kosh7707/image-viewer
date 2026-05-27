@@ -22,7 +22,10 @@ export function entriesToDTO(entries: MeasuredWalkEntry[]): AlbumEntryDTO[] {
     width: e.estimate.width,
     height: e.estimate.height,
     frameCount: e.estimate.frameCount,
-    estimatedBytes: e.estimate.bytes,
+    estimatedBytes: e.estimate.preloadBytes,
+    encodedBytes: e.estimate.encodedBytes,
+    allFramesDecodedBytes: e.estimate.bytes,
+    playbackBytes: e.estimate.playbackBytes,
   }));
 }
 
@@ -71,9 +74,9 @@ export async function executeAlbumLoad(
         cancelId: 0,
         title: '큰 폴더',
         message: '폴더가 매우 큽니다',
-        detail: `이 폴더의 이미지 ${count}장을 모두 메모리에 올리면 약 ${formatMB(
+        detail: `이 폴더의 이미지 ${count}장 중 정적 이미지 preload/cache에 약 ${formatMB(
           totalBytes,
-        )} MB가 필요합니다 (소프트 캡 ${formatMB(DEFAULT_SOFT_CAP_BYTES)} MB 초과). 진행하시겠습니까?`,
+        )} MB가 필요합니다 (소프트 캡 ${formatMB(DEFAULT_SOFT_CAP_BYTES)} MB 초과). GIF/animated WebP는 별도 재생 정책으로 처리합니다. 진행하시겠습니까?`,
       });
       return r.response === 1;
     },

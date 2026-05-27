@@ -29,8 +29,12 @@ import { NativeImageHost } from './native-image-host';
 import { decodeAnimatedWebp } from './animated-webp-decoder';
 import { disposeFrames } from './animation-disposal';
 import { SpeedHud } from './speed-hud';
-
-const GIF_FALLBACK_BYTES = 100 * 1024 * 1024;
+import {
+  MAX_NATIVE_GIF_BYTES,
+  shouldUseNativeAnimatedWebp,
+  shouldUseNativeGif,
+} from './animation-policy';
+import type { AlbumEntryDTO } from '../preload/api';
 
 const canvasEl = document.getElementById('canvas') as HTMLCanvasElement;
 const fallbackImg = document.getElementById('fallback-gif') as HTMLImageElement;
@@ -70,11 +74,12 @@ const sortDialog = new SortDialog(dialogHost, {
 installContextMenu(() => gifHost.speedMultiplier);
 
 let navEpoch = 0;
+let albumEpoch = 0;
 function bumpEpoch(): number {
   navEpoch += 1;
   return navEpoch;
 }
-preloader.setEpochSupplier(() => navEpoch);
+preloader.setEpochSupplier(() => albumEpoch);
 
 let activeGifWorker: Worker | null = null;
 
@@ -99,10 +104,10 @@ async function renderCurrent(): Promise<void> {
   clearGif();
   switch (mediaKindForEntry(current)) {
     case 'animated-gif':
-      await renderGif(current.path, myEpoch);
+      await renderGif(current, myEpoch);
       break;
     case 'webp':
-      await renderWebp(current.path, myEpoch);
+      await renderWebp(current, myEpoch);
       break;
     case 'static-bitmap':
       await renderStatic(current.path, myEpoch);
@@ -110,8 +115,20 @@ async function renderCurrent(): Promise<void> {
   }
 }
 
-async function renderWebp(filePath: string, myEpoch: number): Promise<void> {
+async function showNativePath(filePath: string, myEpoch: number): Promise<void> {
+  const url = await window.api.fileUrl(filePath);
+  if (myEpoch !== navEpoch) return;
+  nativeImageHost.showUrl(url);
+}
+
+async function renderWebp(current: AlbumEntryDTO, myEpoch: number): Promise<void> {
+  const filePath = current.path;
   try {
+    if (shouldUseNativeAnimatedWebp(current)) {
+      await showNativePath(filePath, myEpoch);
+      return;
+    }
+
     const bytes = await window.api.readFile(filePath);
     if (myEpoch !== navEpoch) return;
 
@@ -142,7 +159,7 @@ async function renderStatic(filePath: string, myEpoch: number): Promise<void> {
     if (cached) {
       bitmap = cached.bitmap as unknown as ImageBitmap;
     } else {
-      bitmap = await preloader.fetchAndDecode(filePath, myEpoch);
+      bitmap = await preloader.fetchAndDecode(filePath, albumEpoch);
     }
     if (myEpoch !== navEpoch) return;
     if (bitmap) painter.drawImage(bitmap);
@@ -152,11 +169,17 @@ async function renderStatic(filePath: string, myEpoch: number): Promise<void> {
   }
 }
 
-async function renderGif(filePath: string, myEpoch: number): Promise<void> {
+async function renderGif(current: AlbumEntryDTO, myEpoch: number): Promise<void> {
+  const filePath = current.path;
   try {
+    if (shouldUseNativeGif(current)) {
+      await showNativePath(filePath, myEpoch);
+      return;
+    }
+
     const bytes = await window.api.readFile(filePath);
     if (myEpoch !== navEpoch) return;
-    if (bytes.byteLength > GIF_FALLBACK_BYTES) {
+    if (bytes.byteLength > MAX_NATIVE_GIF_BYTES) {
       nativeImageHost.showBytes(bytes, 'image/gif');
       return;
     }
@@ -232,13 +255,14 @@ installKeyboard({
 });
 
 window.api.onAlbumLoad((payload) => {
+  albumEpoch += 1;
   bumpEpoch();
   // New album: evict everything from prior session.
   governor.evictAll();
   album.load(payload.folder, payload.entries, payload.currentIndex);
   void renderCurrent();
   // Then kick off background preload of every static path in the album.
-  preloader.scheduleAll(album.entries(), navEpoch, ({ completed, total }) => {
+  preloader.scheduleAll(album.entries(), albumEpoch, ({ completed, total }) => {
     progressToast.update({ phase: 'preloading', completed, total });
   });
 });

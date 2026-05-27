@@ -12,8 +12,14 @@ export interface AlbumEntryDTO {
   height?: number;
   /** Header-derived frame count; static images are 1, animated images are >1. */
   frameCount?: number;
-  /** Header-derived decoded-memory estimate in bytes. */
+  /** Static preload/cache memory estimate in bytes. Animated media is usually 0. */
   estimatedBytes?: number;
+  /** Encoded file size in bytes. */
+  encodedBytes?: number;
+  /** RGBA bytes if all frames are decoded into full-canvas bitmaps. */
+  allFramesDecodedBytes?: number;
+  /** Approximate native/streaming playback working set in bytes. */
+  playbackBytes?: number;
 }
 
 export interface AlbumLoadPayload {
@@ -44,6 +50,8 @@ export interface ImageViewerApi {
   updateSpeed(speed: number): Promise<void>;
   /** Read an image file as bytes (validated by main). */
   readFile(filePath: string): Promise<Uint8Array>;
+  /** Return a validated file:// URL for native browser image playback. */
+  fileUrl(filePath: string): Promise<string>;
   /** Native file-open dialog filtered to supported extensions. */
   openFileDialog(): Promise<void>;
   /** Native folder-open dialog. */

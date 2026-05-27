@@ -94,6 +94,19 @@ test('NativeImageHost revokes the previous URL before replacing it', () => {
   assert.deepEqual(revoked, ['blob:fake-1']);
 });
 
+test('NativeImageHost can show validated file URLs without revoking them as object URLs', () => {
+  const img = fakeImage();
+  const { urls, revoked } = fakeUrls();
+  const host = new NativeImageHost(img as unknown as HTMLImageElement, urls);
+
+  host.showUrl('file:///C:/pics/a.gif');
+  host.clear();
+
+  assert.equal(img.src, '');
+  assert.equal(img.hidden, true);
+  assert.deepEqual(revoked, []);
+});
+
 test('nativeMimeForPath maps animated formats to browser image MIME types', () => {
   assert.equal(nativeMimeForPath('/p/a.GIF'), 'image/gif');
   assert.equal(nativeMimeForPath('/p/a.WEBP'), 'image/webp');

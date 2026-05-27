@@ -10,6 +10,7 @@ const api = {
     const buf = (await ipcRenderer.invoke('fs:readFile', filePath)) as Buffer | Uint8Array;
     return new Uint8Array(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength));
   },
+  fileUrl: (filePath: string): Promise<string> => ipcRenderer.invoke('fs:fileUrl', filePath),
   openFileDialog: (): Promise<void> => ipcRenderer.invoke('dialog:openFile'),
   openFolderDialog: (): Promise<void> => ipcRenderer.invoke('dialog:openFolder'),
   quitApp: (): Promise<void> => ipcRenderer.invoke('app:quit'),

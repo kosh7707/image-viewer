@@ -98,6 +98,61 @@ test('PreloadQueue refuses animated WebP bytes before createImageBitmap can coll
   );
 });
 
+test('PreloadQueue joins a matching in-flight decode instead of returning null', async () => {
+  const globals = globalThis as unknown as RuntimeGlobals;
+  const oldWindow = globals.window;
+  const oldCreateImageBitmap = globals.createImageBitmap;
+  const reads: string[] = [];
+  const bitmaps: FakeBitmap[] = [];
+  let releaseRead: ((bytes: Uint8Array) => void) | null = null;
+  const readGate = new Promise<Uint8Array>((resolve) => {
+    releaseRead = resolve;
+  });
+
+  globals.window = {
+    api: {
+      async readFile(filePath: string): Promise<Uint8Array> {
+        reads.push(filePath);
+        return await readGate;
+      },
+    },
+  };
+  globals.createImageBitmap = async (): Promise<ImageBitmap> => {
+    const bitmap: FakeBitmap = {
+      width: 2,
+      height: 3,
+      closed: false,
+      close(): void {
+        this.closed = true;
+      },
+    };
+    bitmaps.push(bitmap);
+    return bitmap as unknown as ImageBitmap;
+  };
+
+  try {
+    const governor = new CacheGovernor();
+    const queue = new PreloadQueue(governor);
+    const epoch = 1;
+    queue.setEpochSupplier(() => epoch);
+
+    const first = queue.fetchAndDecode('/p/a.png', epoch);
+    await Promise.resolve();
+    const second = queue.fetchAndDecode('/p/a.png', epoch);
+
+    releaseRead!(new Uint8Array([1, 2, 3]));
+    const [firstBitmap, secondBitmap] = await Promise.all([first, second]);
+
+    assert.equal(firstBitmap, secondBitmap);
+    assert.equal(firstBitmap, bitmaps[0]);
+    assert.deepEqual(reads, ['/p/a.png']);
+    assert.equal(governor.has('/p/a.png'), true);
+  } finally {
+    globals.window = oldWindow;
+    globals.createImageBitmap = oldCreateImageBitmap;
+  }
+});
+
 function waitForPreload(
   queue: PreloadQueue,
   paths: Parameters<PreloadQueue['scheduleAll']>[0],

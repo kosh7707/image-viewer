@@ -39,7 +39,8 @@ export async function loadAlbum(rootDir: string, deps: AlbumLoadDeps): Promise<A
     return { status: 'empty', entries: [], totalBytes: 0 };
   }
 
-  // MEASURING (sequential; per-file readFile is the dominant cost anyway)
+  // MEASURING (sequential; per-file readFile is the dominant cost anyway).
+  // totalBytes tracks static preload-cache bytes, not all-frame animated cost.
   const surviving: MeasuredWalkEntry[] = [];
   let totalBytes = 0;
   for (let i = 0; i < walked.length; i++) {
@@ -47,7 +48,7 @@ export async function loadAlbum(rootDir: string, deps: AlbumLoadDeps): Promise<A
     try {
       const est = await deps.measureFile(entry.path);
       surviving.push({ ...entry, estimate: est });
-      totalBytes += est.bytes;
+      totalBytes += est.preloadBytes;
     } catch {
       // silently drop unreadable / corrupt file
     }

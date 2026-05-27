@@ -17,7 +17,7 @@ const DEFAULT_URLS: ObjectUrlAdapter = {
 export class NativeImageHost {
   private img: HTMLImageElement;
   private urls: ObjectUrlAdapter;
-  private currentUrl: string | null = null;
+  private currentObjectUrl: string | null = null;
 
   constructor(img: HTMLImageElement, urls: ObjectUrlAdapter = DEFAULT_URLS) {
     this.img = img;
@@ -32,22 +32,31 @@ export class NativeImageHost {
     ) as ArrayBuffer;
     const blob = new Blob([cleanBuf], { type: mime });
     const url = this.urls.createObjectURL(blob);
-    this.currentUrl = url;
-    this.img.src = url;
-    this.img.hidden = false;
-    this.img.classList.add('active');
+    this.currentObjectUrl = url;
+    this.showSource(url);
+  }
+
+  showUrl(url: string): void {
+    this.clear();
+    this.showSource(url);
   }
 
   clear(): void {
-    if (this.currentUrl) {
-      this.urls.revokeObjectURL(this.currentUrl);
-      this.currentUrl = null;
+    if (this.currentObjectUrl) {
+      this.urls.revokeObjectURL(this.currentObjectUrl);
+      this.currentObjectUrl = null;
       this.img.removeAttribute('src');
     } else if (this.img.src) {
       this.img.removeAttribute('src');
     }
     this.img.classList.remove('active');
     this.img.hidden = true;
+  }
+
+  private showSource(url: string): void {
+    this.img.src = url;
+    this.img.hidden = false;
+    this.img.classList.add('active');
   }
 }
 
