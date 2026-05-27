@@ -24,10 +24,24 @@ class FakeClassList {
 
 function fakeImage() {
   const removed: string[] = [];
+  const listeners = new Map<string, Set<() => void>>();
   return {
     src: '',
     hidden: true,
+    complete: false,
+    naturalWidth: 0,
     classList: new FakeClassList(),
+    addEventListener(type: string, listener: () => void): void {
+      const set = listeners.get(type) ?? new Set<() => void>();
+      set.add(listener);
+      listeners.set(type, set);
+    },
+    removeEventListener(type: string, listener: () => void): void {
+      listeners.get(type)?.delete(listener);
+    },
+    dispatch(type: string): void {
+      for (const listener of [...(listeners.get(type) ?? [])]) listener();
+    },
     removeAttribute(name: string): void {
       removed.push(name);
       if (name === 'src') this.src = '';
@@ -104,6 +118,41 @@ test('NativeImageHost can show validated file URLs without revoking them as obje
 
   assert.equal(img.src, '');
   assert.equal(img.hidden, true);
+  assert.deepEqual(revoked, []);
+});
+
+test('NativeImageHost activates file URLs only after the browser reports a loaded image', async () => {
+  const img = fakeImage();
+  const { urls } = fakeUrls();
+  const host = new NativeImageHost(img as unknown as HTMLImageElement, urls);
+
+  const ready = host.showUrlWhenReady('file:///C:/pics/large.gif');
+
+  assert.equal(img.src, 'file:///C:/pics/large.gif');
+  assert.equal(img.hidden, true);
+  assert.equal(img.classList.has('active'), false);
+
+  img.complete = true;
+  img.naturalWidth = 320;
+  img.dispatch('load');
+
+  assert.equal(await ready, true);
+  assert.equal(img.hidden, false);
+  assert.equal(img.classList.has('active'), true);
+});
+
+test('NativeImageHost keeps the overlay hidden when a native file URL fails', async () => {
+  const img = fakeImage();
+  const { urls, revoked } = fakeUrls();
+  const host = new NativeImageHost(img as unknown as HTMLImageElement, urls);
+
+  const ready = host.showUrlWhenReady('file:///C:/pics/bad.gif');
+  img.dispatch('error');
+
+  assert.equal(await ready, false);
+  assert.equal(img.hidden, true);
+  assert.equal(img.src, '');
+  assert.equal(img.classList.has('active'), false);
   assert.deepEqual(revoked, []);
 });
 

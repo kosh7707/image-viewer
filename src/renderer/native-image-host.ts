@@ -18,6 +18,7 @@ export class NativeImageHost {
   private img: HTMLImageElement;
   private urls: ObjectUrlAdapter;
   private currentObjectUrl: string | null = null;
+  private loadToken = 0;
 
   constructor(img: HTMLImageElement, urls: ObjectUrlAdapter = DEFAULT_URLS) {
     this.img = img;
@@ -41,7 +42,64 @@ export class NativeImageHost {
     this.showSource(url);
   }
 
+  /**
+   * Start loading a validated file URL without activating the overlay until
+   * Chromium has read enough image data to report dimensions. Activating the
+   * `<img>` before that point covers the current canvas with a black fallback
+   * box, which is indistinguishable from "the GIF did not open" on large files.
+   */
+  async showUrlWhenReady(url: string): Promise<boolean> {
+    const token = this.beginHiddenLoad();
+    return await new Promise<boolean>((resolve) => {
+      let settled = false;
+      let pollTimer: ReturnType<typeof setTimeout> | null = null;
+      const cleanup = (): void => {
+        if (pollTimer !== null) {
+          clearTimeout(pollTimer);
+          pollTimer = null;
+        }
+        this.img.removeEventListener('load', onLoad);
+        this.img.removeEventListener('error', onError);
+      };
+      const finish = (loaded: boolean): void => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        if (this.loadToken !== token) {
+          resolve(false);
+          return;
+        }
+        if (loaded && this.hasImageDimensions()) {
+          this.activateLoadedSource();
+          resolve(true);
+          return;
+        }
+        this.clear();
+        resolve(false);
+      };
+      const checkReady = (): void => {
+        if (this.loadToken !== token) {
+          finish(false);
+          return;
+        }
+        if (this.hasImageDimensions()) {
+          finish(true);
+          return;
+        }
+        pollTimer = setTimeout(checkReady, 50);
+      };
+      const onLoad = (): void => finish(true);
+      const onError = (): void => finish(false);
+
+      this.img.addEventListener('load', onLoad, { once: true });
+      this.img.addEventListener('error', onError, { once: true });
+      this.img.src = url;
+      checkReady();
+    });
+  }
+
   clear(): void {
+    this.loadToken += 1;
     if (this.currentObjectUrl) {
       this.urls.revokeObjectURL(this.currentObjectUrl);
       this.currentObjectUrl = null;
@@ -54,9 +112,26 @@ export class NativeImageHost {
   }
 
   private showSource(url: string): void {
+    this.loadToken += 1;
     this.img.src = url;
+    this.activateLoadedSource();
+  }
+
+  private beginHiddenLoad(): number {
+    this.clear();
+    const token = ++this.loadToken;
+    this.img.hidden = true;
+    this.img.classList.remove('active');
+    return token;
+  }
+
+  private activateLoadedSource(): void {
     this.img.hidden = false;
     this.img.classList.add('active');
+  }
+
+  private hasImageDimensions(): boolean {
+    return this.img.naturalWidth > 0;
   }
 }
 

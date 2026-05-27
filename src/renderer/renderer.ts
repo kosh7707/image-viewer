@@ -156,20 +156,13 @@ async function renderCurrent(): Promise<void> {
 async function showNativePath(filePath: string, myEpoch: number): Promise<void> {
   const url = await window.api.fileUrl(filePath);
   if (myEpoch !== navEpoch) return;
-  stopActiveAnimation();
-  nativeImageHost.showUrl(url);
-  painter.clear();
+  await showNativeUrl(url, myEpoch);
 }
 
 async function renderPreparedOrGif(current: AlbumEntryDTO, myEpoch: number): Promise<void> {
-  const prepared = await animatedPreloader.ensure(current, album.index(), {
-    estimatedBytes: estimatePreparedMediaBytes(current),
-    protectCurrent: true,
-    reason: 'current',
-  });
-  if (myEpoch !== navEpoch) return;
+  const prepared = preparedMediaCache.get(current.path);
   if (prepared) {
-    commitPreparedMedia(prepared);
+    await commitPreparedMedia(prepared, myEpoch);
     return;
   }
   await renderGif(current, myEpoch);
@@ -183,13 +176,13 @@ async function renderPreparedOrWebp(current: AlbumEntryDTO, myEpoch: number): Pr
   });
   if (myEpoch !== navEpoch) return;
   if (prepared) {
-    commitPreparedMedia(prepared);
+    await commitPreparedMedia(prepared, myEpoch);
     return;
   }
   await renderWebp(current, myEpoch);
 }
 
-function commitPreparedMedia(media: PreparedMedia): void {
+async function commitPreparedMedia(media: PreparedMedia, myEpoch: number): Promise<void> {
   if (media.kind === 'animation') {
     stopActiveAnimation();
     nativeImageHost.clear();
@@ -197,9 +190,21 @@ function commitPreparedMedia(media: PreparedMedia): void {
     return;
   }
 
+  await showNativeUrl(media.url, myEpoch);
+}
+
+async function showNativeUrl(url: string, myEpoch: number): Promise<void> {
+  const loaded = await nativeImageHost.showUrlWhenReady(url);
+  if (myEpoch !== navEpoch) {
+    if (loaded) nativeImageHost.clear();
+    return;
+  }
+  if (!loaded) {
+    return;
+  }
   stopActiveAnimation();
-  nativeImageHost.showUrl(media.url);
   painter.clear();
+  refreshPreloadPanel();
 }
 
 async function renderWebp(current: AlbumEntryDTO, myEpoch: number): Promise<void> {
@@ -258,16 +263,19 @@ async function renderStatic(filePath: string, myEpoch: number): Promise<void> {
 
 async function renderGif(current: AlbumEntryDTO, myEpoch: number): Promise<void> {
   const filePath = current.path;
+  const nativePlayback = showNativePath(filePath, myEpoch).catch((err) => {
+    console.warn('[render] gif native playback failed:', filePath, err);
+  });
   try {
     if (shouldPrepareNative(current)) {
-      await showNativePath(filePath, myEpoch);
+      await nativePlayback;
       return;
     }
 
     const bytes = await window.api.readFile(filePath);
     if (myEpoch !== navEpoch) return;
     if (bytes.byteLength > MAX_NATIVE_GIF_BYTES) {
-      await showNativePath(filePath, myEpoch);
+      await nativePlayback;
       return;
     }
 
@@ -282,7 +290,7 @@ async function renderGif(current: AlbumEntryDTO, myEpoch: number): Promise<void>
       gifHost.play({ ...parsed, dispose: () => disposeFrames(parsed.frames) });
       return;
     }
-    await showNativePath(filePath, myEpoch);
+    await nativePlayback;
   } catch (err) {
     console.warn('[render] gif failed:', filePath, err);
   }

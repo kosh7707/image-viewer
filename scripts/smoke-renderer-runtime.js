@@ -15,7 +15,7 @@ const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 
 const ROOT = path.resolve(__dirname, '..');
-const DIST = path.join(ROOT, 'dist', 'src');
+const DIST = process.env.IMAGE_VIEWER_SMOKE_DIST || path.join(ROOT, 'dist', 'src');
 const TWO_FRAME_GIF = Buffer.from(
   '47494638396101000100F00000FFFFFF00000021F90404640000002C000000000100010000020244010021F90404640000002C0000000001000100000202440100' +
     '3B',
@@ -213,7 +213,9 @@ async function main() {
 
   tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'image-viewer-smoke-'));
   const gifPath = path.join(tempDir, 'two-frame.gif');
+  const blockedGifPath = path.join(tempDir, 'blocked-read.gif');
   fs.writeFileSync(gifPath, TWO_FRAME_GIF);
+  fs.writeFileSync(blockedGifPath, TWO_FRAME_GIF);
 
   const win = new BrowserWindow({
     show: true,
@@ -287,6 +289,65 @@ async function main() {
   );
   trace('gif:advanced');
   if (!advanced) throw new Error('GIF did not advance frames');
+
+  blockedReadBasenames.add(path.basename(blockedGifPath));
+  win.webContents.send('album:load', {
+    folder: tempDir,
+    entries: [{ path: blockedGifPath, mtimeMs: Date.now() }],
+    currentIndex: 0,
+  });
+  await waitFor(
+    win,
+    `(() => {
+      const img = document.getElementById('fallback-gif');
+      const h = window.__viewer && window.__viewer.gifHost;
+      return Boolean(
+        img &&
+          img.classList.contains('active') &&
+          img.hidden === false &&
+          img.src.startsWith('file:') &&
+          img.naturalWidth > 0 &&
+          h &&
+          !h.gif
+      );
+    })()`,
+    5_000,
+    'GIF native playback before renderer read/decode',
+  );
+  blockedReadBasenames.delete(path.basename(blockedGifPath));
+  trace('gif:native-before-read');
+
+  win.webContents.send('album:load', {
+    folder: tempDir,
+    entries: [
+      {
+        path: gifPath,
+        mtimeMs: Date.now(),
+        encodedBytes: 101 * 1024 * 1024,
+        allFramesDecodedBytes: 4 * 1024 * 1024 * 1024 + 1,
+      },
+    ],
+    currentIndex: 0,
+  });
+  await waitFor(
+    win,
+    `(() => {
+      const img = document.getElementById('fallback-gif');
+      const h = window.__viewer && window.__viewer.gifHost;
+      return Boolean(
+        img &&
+          img.classList.contains('active') &&
+          img.hidden === false &&
+          img.src.startsWith('file:') &&
+          img.naturalWidth > 0 &&
+          h &&
+          !h.gif
+      );
+    })()`,
+    5_000,
+    'large GIF native fallback',
+  );
+  trace('gif:native-fallback');
 
   const webpSupport = await win.webContents.executeJavaScript(
     `(
@@ -463,10 +524,11 @@ async function main() {
       const img = document.getElementById('fallback-gif');
       const h = window.__viewer && window.__viewer.gifHost;
       return Boolean(
-        img &&
+          img &&
           img.classList.contains('active') &&
           img.hidden === false &&
           img.src.startsWith('file:') &&
+          img.naturalWidth > 0 &&
           h &&
           !h.gif
       );
