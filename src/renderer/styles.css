@@ -16,6 +16,67 @@ body {
   color: #fff;
 }
 
+#boot-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 20000;
+  display: grid;
+  place-items: center;
+  background: #000;
+  color: rgba(255, 255, 255, 0.92);
+  pointer-events: none;
+  opacity: 1;
+  transition: opacity 160ms ease;
+}
+
+#boot-overlay.boot-overlay--hidden {
+  opacity: 0;
+}
+
+.boot-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: min(320px, 72vw);
+  gap: 14px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.boot-title {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.boot-progress {
+  position: relative;
+  width: 100%;
+  height: 3px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.boot-progress-bar {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -40%;
+  width: 40%;
+  border-radius: inherit;
+  background: rgba(255, 255, 255, 0.8);
+  animation: boot-progress 900ms ease-in-out infinite;
+}
+
+@keyframes boot-progress {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(350%);
+  }
+}
+
 #canvas {
   display: block;
   position: absolute;

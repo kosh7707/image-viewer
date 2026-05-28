@@ -1,16 +1,10 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, Menu } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import { pathToFileURL } from 'url';
 import { SUPPORTED_EXTS } from './folder';
-import {
-  executeAlbumLoad,
-  bindSetAlbumPaths,
-  openFileDialogAndLoad,
-  openFolderDialogAndLoad,
-} from './album-flow';
 import { toggleFullscreen } from './window';
-import { showContextMenu, menuState } from './menu';
+import { configureMenuActions, showContextMenu, menuState } from './menu';
 import { startRssMonitor, stopRssMonitor } from './rss';
 import {
   loadPreferences,
@@ -22,11 +16,39 @@ import {
   normalizeAnimationSpeed,
   type UserPreferences,
 } from '../shared/user-preferences';
+import { applyPortableRuntimePaths, type PortableLayout } from './portable-runtime';
+import { createBootTimingLogger, type BootTimingLogger } from './boot-timing';
 
 let mainWindow: BrowserWindow | null = null;
+let albumFlowPromise: Promise<typeof import('./album-flow')> | null = null;
+
+const processStartedAt = Date.now();
+const portableLayout = applyPortableRuntimePaths({
+  env: process.env,
+  execPath: process.execPath,
+  setPath: (name, value) => app.setPath(name, value),
+  setAppLogsPath: (value) => app.setAppLogsPath(value),
+});
+const bootLogger = createOptionalBootLogger(portableLayout);
+
+Menu.setApplicationMenu(null);
+logBootEvent('main-start');
 
 function userDataDir(): string {
   return app.getPath('userData');
+}
+
+function createOptionalBootLogger(layout: PortableLayout | null): BootTimingLogger | null {
+  const logsDir = process.env.IMAGEVIEWER_BOOT_LOG_DIR?.trim() || layout?.logsDir;
+  return logsDir ? createBootTimingLogger(logsDir) : null;
+}
+
+function logBootEvent(event: string): void {
+  try {
+    bootLogger?.log(event, { elapsedMs: Date.now() - processStartedAt });
+  } catch {
+    // Boot timing must never prevent the viewer from opening.
+  }
 }
 
 // Defense-in-depth: the renderer may only read files belonging to the most
@@ -44,7 +66,13 @@ export function setAlbumPaths(images: string[]): void {
   }
 }
 
-bindSetAlbumPaths(setAlbumPaths);
+async function loadAlbumFlow(): Promise<typeof import('./album-flow')> {
+  albumFlowPromise ??= import('./album-flow').then((mod) => {
+    mod.bindSetAlbumPaths(setAlbumPaths);
+    return mod;
+  });
+  return await albumFlowPromise;
+}
 
 function resolveReadableAlbumImage(filePath: string): string {
   if (typeof filePath !== 'string') {
@@ -79,6 +107,7 @@ async function handleArgPath(argPath: string, win: BrowserWindow): Promise<void>
   try {
     const abs = path.resolve(argPath);
     const st = fs.statSync(abs);
+    const { executeAlbumLoad } = await loadAlbumFlow();
     if (st.isFile()) {
       const folder = path.dirname(abs);
       await executeAlbumLoad(folder, win, abs);
@@ -104,10 +133,16 @@ function createWindow(): void {
       preload: path.join(__dirname, '..', 'preload', 'preload.js'),
     },
   });
+  logBootEvent('window-created');
   mainWindow.setMenuBarVisibility(false);
   mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
 
+  mainWindow.webContents.on('dom-ready', () => {
+    logBootEvent('renderer-dom-ready');
+  });
+
   mainWindow.webContents.on('did-finish-load', () => {
+    logBootEvent('renderer-loaded');
     if (!mainWindow) return;
     const arg = pickArgPath();
     if (arg) {
@@ -167,12 +202,14 @@ ipcMain.handle('fs:fileUrl', (_event, filePath: string) => {
 ipcMain.handle('dialog:openFile', async (event) => {
   const win = BrowserWindow.fromWebContents(event.sender);
   if (!win) return;
+  const { openFileDialogAndLoad } = await loadAlbumFlow();
   await openFileDialogAndLoad(win);
 });
 
 ipcMain.handle('dialog:openFolder', async (event) => {
   const win = BrowserWindow.fromWebContents(event.sender);
   if (!win) return;
+  const { openFolderDialogAndLoad } = await loadAlbumFlow();
   await openFolderDialogAndLoad(win);
 });
 
@@ -180,10 +217,32 @@ ipcMain.handle('app:quit', () => {
   app.quit();
 });
 
-app.whenReady().then(async () => {
-  const prefs = await loadPreferences(userDataDir());
-  menuState.speedMultiplier = prefs.animation.speedMultiplier;
+ipcMain.on('boot:renderer-ready', () => {
+  logBootEvent('renderer-ready');
+});
+
+configureMenuActions({
+  openFile: async (win) => {
+    const { openFileDialogAndLoad } = await loadAlbumFlow();
+    await openFileDialogAndLoad(win);
+  },
+  openFolder: async (win) => {
+    const { openFolderDialogAndLoad } = await loadAlbumFlow();
+    await openFolderDialogAndLoad(win);
+  },
+});
+
+app.whenReady().then(() => {
+  logBootEvent('app-ready');
   createWindow();
+  void loadPreferences(userDataDir())
+    .then((prefs) => {
+      menuState.speedMultiplier = prefs.animation.speedMultiplier;
+      logBootEvent('preferences-loaded');
+    })
+    .catch(() => {
+      logBootEvent('preferences-load-failed');
+    });
 });
 
 app.on('window-all-closed', () => {

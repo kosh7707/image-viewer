@@ -23,6 +23,7 @@ import { disposeFrames } from './animation-disposal';
 import { SpeedHud } from './speed-hud';
 import { PositionHud } from './position-hud';
 import { PreloadPanel, type PreloadPanelItem, type PreloadPanelItemKind } from './preload-panel';
+import { hideBootOverlay } from './boot-overlay';
 import {
   planPreloadBudgetCandidates,
   type PreloadBudgetKind,
@@ -45,6 +46,9 @@ const canvasEl = document.getElementById('canvas') as HTMLCanvasElement;
 const fallbackImg = document.getElementById('fallback-gif') as HTMLImageElement;
 const toastHost = document.getElementById('toast-host') as HTMLElement;
 const dialogHost = document.getElementById('dialog-host') as HTMLElement;
+
+hideBootOverlay();
+window.api.markRendererReady();
 
 const painter = new CanvasPainter(canvasEl);
 const album = new Album();

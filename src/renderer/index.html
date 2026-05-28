@@ -10,6 +10,14 @@
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
+    <div id="boot-overlay" role="status" aria-live="polite">
+      <div class="boot-card">
+        <div class="boot-title">ImageViewer 로딩 중...</div>
+        <div class="boot-progress" aria-hidden="true">
+          <div class="boot-progress-bar"></div>
+        </div>
+      </div>
+    </div>
     <canvas id="canvas"></canvas>
     <img id="fallback-gif" hidden alt="" />
     <div id="toast-host"></div>

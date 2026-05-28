@@ -9,6 +9,7 @@
     "dev": "tsc -w & electron .",
     "test": "npm run build && node --test dist/tests/*.test.js",
     "dist": "npm run build && electron-builder",
+    "portable:folder": "node scripts/make-portable-folder.js",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",

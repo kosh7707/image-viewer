@@ -17,6 +17,9 @@ const api = {
   openFileDialog: (): Promise<void> => ipcRenderer.invoke('dialog:openFile'),
   openFolderDialog: (): Promise<void> => ipcRenderer.invoke('dialog:openFolder'),
   quitApp: (): Promise<void> => ipcRenderer.invoke('app:quit'),
+  markRendererReady: (): void => {
+    ipcRenderer.send('boot:renderer-ready');
+  },
   onAlbumLoad: (cb: (payload: AlbumLoadPayload) => void): (() => void) => {
     const listener = (_e: IpcRendererEvent, payload: AlbumLoadPayload) => cb(payload);
     ipcRenderer.on('album:load', listener);

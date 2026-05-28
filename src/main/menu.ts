@@ -1,5 +1,4 @@
 import { Menu, app, BrowserWindow, MenuItemConstructorOptions } from 'electron';
-import { openFileDialogAndLoad, openFolderDialogAndLoad } from './album-flow';
 
 export interface MenuState {
   speedMultiplier: number;
@@ -12,6 +11,21 @@ export const menuState: MenuState = {
 export interface MenuPoint {
   x: number;
   y: number;
+}
+
+export interface MenuActions {
+  openFile: (win: BrowserWindow) => void | Promise<void>;
+  openFolder: (win: BrowserWindow) => void | Promise<void>;
+}
+
+const menuActions: MenuActions = {
+  openFile: () => undefined,
+  openFolder: () => undefined,
+};
+
+export function configureMenuActions(actions: Partial<MenuActions>): void {
+  if (actions.openFile) menuActions.openFile = actions.openFile;
+  if (actions.openFolder) menuActions.openFolder = actions.openFolder;
 }
 
 function normalizePoint(point: MenuPoint | undefined): MenuPoint | undefined {
@@ -28,13 +42,13 @@ export function showContextMenu(win: BrowserWindow, point?: MenuPoint): void {
     {
       label: 'Open File...',
       click: () => {
-        void openFileDialogAndLoad(win);
+        void menuActions.openFile(win);
       },
     },
     {
       label: 'Open Folder...',
       click: () => {
-        void openFolderDialogAndLoad(win);
+        void menuActions.openFolder(win);
       },
     },
     { type: 'separator' },

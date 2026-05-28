@@ -64,6 +64,8 @@ export interface ImageViewerApi {
   openFolderDialog(): Promise<void>;
   /** Quit the app immediately via main process. */
   quitApp(): Promise<void>;
+  /** Notify main that renderer JS initialized and the static boot overlay was hidden. */
+  markRendererReady(): void;
   /** Subscribe to album:load events from the main process. */
   onAlbumLoad(cb: (payload: AlbumLoadPayload) => void): () => void;
   /** Subscribe to rss:update events. */
