@@ -16,6 +16,8 @@ const { pathToFileURL } = require('node:url');
 
 const ROOT = path.resolve(__dirname, '..');
 const DIST = process.env.IMAGE_VIEWER_SMOKE_DIST || path.join(ROOT, 'dist', 'src');
+const GIFUCT_ROOT = path.dirname(require.resolve('gifuct-js/package.json'));
+const REAL_GIF = path.join(GIFUCT_ROOT, 'demo', 'horses.gif');
 const TWO_FRAME_GIF = Buffer.from(
   '47494638396101000100F00000FFFFFF00000021F90404640000002C000000000100010000020244010021F90404640000002C0000000001000100000202440100' +
     '3B',
@@ -348,6 +350,49 @@ async function main() {
     'large GIF native fallback',
   );
   trace('gif:native-fallback');
+
+  if (!fs.existsSync(REAL_GIF)) {
+    throw new Error(`real GIF fixture missing: ${REAL_GIF}`);
+  }
+  win.webContents.send('album:load', {
+    folder: path.dirname(REAL_GIF),
+    entries: [{ path: REAL_GIF, mtimeMs: Date.now(), encodedBytes: fs.statSync(REAL_GIF).size }],
+    currentIndex: 0,
+  });
+  await waitFor(
+    win,
+    `(() => {
+      const img = document.getElementById('fallback-gif');
+      const h = window.__viewer && window.__viewer.gifHost;
+      return Boolean(
+        img &&
+          !img.classList.contains('active') &&
+          h &&
+          h.gif &&
+          h.gif.frames.length > 10 &&
+          h.frameAdvanceCount > 0
+      );
+    })()`,
+    10_000,
+    'real GIF decoded playback',
+  );
+  const realGifCanvas = await win.webContents.executeJavaScript(
+    `(() => {
+      const canvas = document.getElementById('canvas');
+      const ctx = canvas.getContext('2d');
+      const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+      let nonBlack = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        if (data[i] > 8 || data[i + 1] > 8 || data[i + 2] > 8) nonBlack += 1;
+      }
+      return { nonBlack, total: data.length / 4, ratio: nonBlack / (data.length / 4) };
+    })()`,
+    true,
+  );
+  if (!realGifCanvas || realGifCanvas.ratio < 0.02) {
+    throw new Error(`real GIF decoded to black canvas: ${JSON.stringify(realGifCanvas)}`);
+  }
+  trace(`gif:real-decoded-visible:${JSON.stringify(realGifCanvas)}`);
 
   const webpSupport = await win.webContents.executeJavaScript(
     `(

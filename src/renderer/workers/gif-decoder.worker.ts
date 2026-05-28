@@ -126,8 +126,12 @@ self.onmessage = async (event: MessageEvent<ParseRequest>) => {
       const previous = frame.disposalType === 3 ? ctx.getImageData(0, 0, fullW, fullH) : null;
       ctx.drawImage(patchCanvas, frame.dims.left, frame.dims.top);
 
-      // Snapshot the full frame as an ImageBitmap.
-      const bmp = await createImageBitmap(composite);
+      // Snapshot the full frame as pixels, then promote those pixels to an
+      // ImageBitmap. Chromium/Electron can return a blank bitmap when
+      // createImageBitmap() snapshots an OffscreenCanvas from this classic
+      // worker; ImageData is the explicit pixel contract and catches real GIFs
+      // that otherwise turn black once the decoded/preloaded path takes over.
+      const bmp = await createImageBitmap(ctx.getImageData(0, 0, fullW, fullH));
       bitmaps.push(bmp);
       // delay is in 1/100 sec; spec stores ms.
       const delayMs = frame.delay && frame.delay > 0 ? frame.delay : 100;
