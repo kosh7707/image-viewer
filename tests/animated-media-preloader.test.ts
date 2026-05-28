@@ -189,6 +189,48 @@ test('AnimatedMediaPreloader aborts stale in-flight preparations when navigation
   assert.equal(cache.has('/new.gif'), true);
 });
 
+test('AnimatedMediaPreloader restarts an aborted scheduled preparation for current playback', async () => {
+  const cache = new PreparedMediaCache(1_000);
+  const started: string[] = [];
+  const aborted: string[] = [];
+  const release = new Map<string, () => void>();
+  const preloader = new AnimatedMediaPreloader(
+    cache,
+    (item, { signal, reason }) =>
+      new Promise<PreparedMedia | null>((resolve) => {
+        const id = `${reason}:${item.path}:${started.length}`;
+        started.push(id);
+        signal.addEventListener(
+          'abort',
+          () => {
+            aborted.push(id);
+            resolve(null);
+          },
+          { once: true },
+        );
+        release.set(id, () => resolve(media(item.path, 100)));
+      }),
+  );
+
+  const scheduled = preloader.schedule([entry('/current.gif')], 0, {
+    estimateBytes: () => 100,
+  });
+  await waitFor(() => started.length === 1);
+  preloader.cancelScheduled();
+  const current = preloader.ensure(entry('/current.gif'), 0, {
+    estimatedBytes: 100,
+    protectCurrent: true,
+    reason: 'current',
+  });
+  await waitFor(() => started.length === 2);
+  release.get('current:/current.gif:1')?.();
+
+  assert.equal((await current)?.path, '/current.gif');
+  await scheduled;
+  assert.deepEqual(aborted, ['preload:/current.gif:0']);
+  assert.equal(cache.has('/current.gif'), true);
+});
+
 function entries(): AlbumEntryDTO[] {
   return [
     entry('/a.gif'),

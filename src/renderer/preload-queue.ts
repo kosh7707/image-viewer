@@ -44,8 +44,15 @@ export interface PreloadProgress {
 }
 
 export interface PreloadScheduleOptions {
+  protectCurrent?: boolean;
   currentIndex?: number;
   allowedPaths?: Set<string>;
+}
+
+interface DecodeOptions {
+  protectAdmitted?: boolean;
+  respectActivePlan?: boolean;
+  scheduleId?: number;
 }
 
 type PreloadSource = string | AlbumEntryDTO;
@@ -54,7 +61,7 @@ export class PreloadQueue {
   private governor: CacheGovernor;
   private inflight: Map<
     string,
-    { epoch: number | undefined; promise: Promise<ImageBitmap | null> }
+    { epoch: number | undefined; options: DecodeOptions; promise: Promise<ImageBitmap | null> }
   > = new Map();
   private warmCanvas: OffscreenCanvas | null = null;
   private warmCtx: OffscreenCanvasRenderingContext2D | null = null;
@@ -79,6 +86,11 @@ export class PreloadQueue {
     this.getEpoch = getEpoch;
   }
 
+  cancelScheduled(): void {
+    this.scheduleGeneration += 1;
+    this.activeAllowedPaths = null;
+  }
+
   /**
    * Schedule decode of every measured static bitmap source. Skips animated/native paths
    * (GIF, animated WebP, and metadata-less WebP), cached entries, and inflight entries. Honours the
@@ -94,8 +106,9 @@ export class PreloadQueue {
     if (sources.length === 0) return;
     const scheduleId = ++this.scheduleGeneration;
     this.activeAllowedPaths = options.allowedPaths ? new Set(options.allowedPaths) : null;
-    if (options.allowedPaths) this.governor.retainOnly(options.allowedPaths);
+    if (options.allowedPaths) this.governor.retainOnly(options.allowedPaths, options);
     const myEpoch = epoch ?? (this.getEpoch ? this.getEpoch() : 0);
+    const currentPath = currentPathOf(sources, options.currentIndex);
     const candidates: Array<{ path: string; index: number; estimatedBytes: number | null }> = [];
     for (let index = 0; index < sources.length; index += 1) {
       const source = sources[index]!;
@@ -135,7 +148,11 @@ export class PreloadQueue {
       if (this.scheduleGeneration !== scheduleId) return;
       while (this.inflight.size < this.concurrency && cursor < targets.length) {
         const p = targets[cursor++]!;
-        this.fetchAndDecode(p, myEpoch, { respectActivePlan: true })
+        this.fetchAndDecode(p, myEpoch, {
+          protectAdmitted: Boolean(options.protectCurrent && p === currentPath),
+          respectActivePlan: true,
+          scheduleId,
+        })
           .catch((err) => console.warn('[preload] failed:', p, err?.message ?? err))
           .finally(() => {
             completed += 1;
@@ -154,7 +171,7 @@ export class PreloadQueue {
   async fetchAndDecode(
     filePath: string,
     epoch?: number,
-    options: { respectActivePlan?: boolean } = {},
+    options: DecodeOptions = {},
   ): Promise<ImageBitmap | null> {
     if (this.governor.has(filePath)) {
       const e = this.governor.get(filePath);
@@ -164,6 +181,11 @@ export class PreloadQueue {
     while (true) {
       const existing = this.inflight.get(filePath);
       if (!existing) break;
+      if (options.protectAdmitted) {
+        existing.options.protectAdmitted = true;
+        existing.options.respectActivePlan = false;
+        delete existing.options.scheduleId;
+      }
       if (existing.epoch === myEpoch) return await existing.promise;
       await existing.promise.catch(() => null);
       if (this.governor.has(filePath)) {
@@ -172,8 +194,9 @@ export class PreloadQueue {
       }
     }
 
-    const promise = this.decodeAndAdmit(filePath, myEpoch, options);
-    this.inflight.set(filePath, { epoch: myEpoch, promise });
+    const decodeOptions = { ...options };
+    const promise = this.decodeAndAdmit(filePath, myEpoch, decodeOptions);
+    this.inflight.set(filePath, { epoch: myEpoch, options: decodeOptions, promise });
     try {
       return await promise;
     } finally {
@@ -186,12 +209,20 @@ export class PreloadQueue {
   private async decodeAndAdmit(
     filePath: string,
     myEpoch: number | undefined,
-    options: { respectActivePlan?: boolean } = {},
+    options: DecodeOptions = {},
   ): Promise<ImageBitmap | null> {
     const bytes = await window.api.readFile(filePath);
     if (extOfPath(filePath) === '.webp' && isAnimatedWebpBytes(bytes)) return null;
     const bitmap = await decodeBitmap(filePath, bytes);
     if (myEpoch !== undefined && this.getEpoch && this.getEpoch() !== myEpoch) {
+      try {
+        (bitmap as unknown as { close?: () => void }).close?.();
+      } catch {
+        /* ignore */
+      }
+      return null;
+    }
+    if (options.scheduleId !== undefined && options.scheduleId !== this.scheduleGeneration) {
       try {
         (bitmap as unknown as { close?: () => void }).close?.();
       } catch {
@@ -210,7 +241,10 @@ export class PreloadQueue {
     this.governor.admit(
       filePath,
       bitmap as unknown as { width: number; height: number; close?: () => void },
+      undefined,
+      options.protectAdmitted ? { protectPath: filePath } : undefined,
     );
+    if (!this.governor.has(filePath)) return null;
     if (this.warmCtx) {
       this.warmCtx.clearRect(0, 0, 1, 1);
       this.warmCtx.drawImage(bitmap, 0, 0, 1, 1);
@@ -244,6 +278,12 @@ export class PreloadQueue {
 
 function pathOf(source: PreloadSource): string {
   return typeof source === 'string' ? source : source.path;
+}
+
+function currentPathOf(sources: PreloadSource[], index: number | undefined): string | null {
+  const currentIndex = normalizeCurrentIndex(index, sources.length);
+  const source = sources[currentIndex];
+  return source ? pathOf(source) : null;
 }
 
 function isPreloadableSource(source: PreloadSource): boolean {

@@ -35,6 +35,7 @@ export interface AnimatedMediaPreloaderOptions {
 
 interface InflightPreparation {
   controller: AbortController;
+  protectCurrent: boolean;
   promise: Promise<PreparedMedia | null>;
 }
 
@@ -69,8 +70,20 @@ export class AnimatedMediaPreloader {
     const cached = this.cache.get(entry.path);
     if (cached) return cached;
     if (!isAnimatedPreloadEntry(entry)) return null;
-    const existing = this.inflight.get(entry.path);
-    if (existing) return await existing.promise;
+    while (true) {
+      const existing = this.inflight.get(entry.path);
+      if (!existing) break;
+      if (existing.controller.signal.aborted) {
+        await existing.promise.catch(() => null);
+        continue;
+      }
+      if (protectCurrent && !existing.protectCurrent) {
+        existing.controller.abort();
+        await existing.promise.catch(() => null);
+        continue;
+      }
+      return await existing.promise;
+    }
 
     const estimatedBytes = normalizeByteEstimate(options.estimatedBytes);
     if (
@@ -115,7 +128,7 @@ export class AnimatedMediaPreloader {
           this.notifyChange();
         }
       });
-    this.inflight.set(entry.path, { controller, promise });
+    this.inflight.set(entry.path, { controller, protectCurrent, promise });
     this.notifyChange();
     return await promise;
   }
@@ -179,6 +192,12 @@ export class AnimatedMediaPreloader {
         this.activeProtectedPaths = new Set();
       }
     }
+  }
+
+  cancelScheduled(): void {
+    this.scheduleGeneration += 1;
+    this.abortInflightExcept(new Set(this.activeProtectedPaths));
+    this.activeProtectedPaths = new Set();
   }
 
   clear(): void {

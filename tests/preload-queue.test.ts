@@ -258,6 +258,110 @@ test('PreloadQueue drops an in-flight scheduled decode after the RAM plan change
   }
 });
 
+test('PreloadQueue can protect an oversized current static decode from immediate eviction', async () => {
+  await withRendererRuntime({ '/p/huge.png': new Uint8Array([1]) }, async () => {
+    const governor = new CacheGovernor({ maxBytes: 4, maxEntries: Number.MAX_SAFE_INTEGER });
+    governor.setOrder(['/p/huge.png']);
+    governor.setCurrentIndex(0);
+    const queue = new PreloadQueue(governor);
+
+    const bitmap = await queue.fetchAndDecode('/p/huge.png', 0, { protectAdmitted: true });
+
+    assert.ok(bitmap);
+    assert.equal(governor.has('/p/huge.png'), true);
+    assert.equal(governor.bytes(), 24);
+  });
+});
+
+test('PreloadQueue upgrades an in-flight scheduled decode when current render joins it', async () => {
+  const globals = globalThis as unknown as RuntimeGlobals;
+  const oldWindow = globals.window;
+  const oldCreateImageBitmap = globals.createImageBitmap;
+  let releaseRead: ((bytes: Uint8Array) => void) | null = null;
+  const readGate = new Promise<Uint8Array>((resolve) => {
+    releaseRead = resolve;
+  });
+
+  globals.window = {
+    api: {
+      async readFile(): Promise<Uint8Array> {
+        return await readGate;
+      },
+    },
+  };
+  globals.createImageBitmap = async (): Promise<ImageBitmap> =>
+    ({ width: 2, height: 3, close() {} }) as unknown as ImageBitmap;
+
+  try {
+    const governor = new CacheGovernor({ maxBytes: 4, maxEntries: Number.MAX_SAFE_INTEGER });
+    governor.setOrder(['/p/current.png']);
+    governor.setCurrentIndex(0);
+    const queue = new PreloadQueue(governor);
+    const scheduled = waitForPreload(
+      queue,
+      [{ path: '/p/current.png', mtimeMs: 1, estimatedBytes: 4 }],
+      { currentIndex: 0, allowedPaths: new Set(['/p/current.png']) },
+    );
+    await Promise.resolve();
+
+    const current = queue.fetchAndDecode('/p/current.png', 0, { protectAdmitted: true });
+    releaseRead!(new Uint8Array([1]));
+    assert.ok(await current);
+    await scheduled;
+
+    assert.equal(governor.has('/p/current.png'), true);
+    assert.equal(governor.bytes(), 24);
+  } finally {
+    globals.window = oldWindow;
+    globals.createImageBitmap = oldCreateImageBitmap;
+  }
+});
+
+test('PreloadQueue lets current render rescue a cancelled scheduled decode', async () => {
+  const globals = globalThis as unknown as RuntimeGlobals;
+  const oldWindow = globals.window;
+  const oldCreateImageBitmap = globals.createImageBitmap;
+  let releaseRead: ((bytes: Uint8Array) => void) | null = null;
+  const readGate = new Promise<Uint8Array>((resolve) => {
+    releaseRead = resolve;
+  });
+
+  globals.window = {
+    api: {
+      async readFile(): Promise<Uint8Array> {
+        return await readGate;
+      },
+    },
+  };
+  globals.createImageBitmap = async (): Promise<ImageBitmap> =>
+    ({ width: 2, height: 3, close() {} }) as unknown as ImageBitmap;
+
+  try {
+    const governor = new CacheGovernor({ maxBytes: 4, maxEntries: Number.MAX_SAFE_INTEGER });
+    governor.setOrder(['/p/current.png']);
+    governor.setCurrentIndex(0);
+    const queue = new PreloadQueue(governor);
+    const scheduled = waitForPreload(
+      queue,
+      [{ path: '/p/current.png', mtimeMs: 1, estimatedBytes: 4 }],
+      { currentIndex: 0, allowedPaths: new Set(['/p/current.png']) },
+    );
+    await Promise.resolve();
+
+    queue.cancelScheduled();
+    const current = queue.fetchAndDecode('/p/current.png', 0, { protectAdmitted: true });
+    releaseRead!(new Uint8Array([1]));
+
+    assert.ok(await current);
+    await scheduled;
+    assert.equal(governor.has('/p/current.png'), true);
+    assert.equal(governor.bytes(), 24);
+  } finally {
+    globals.window = oldWindow;
+    globals.createImageBitmap = oldCreateImageBitmap;
+  }
+});
+
 function waitForPreload(
   queue: PreloadQueue,
   paths: Parameters<PreloadQueue['scheduleAll']>[0],

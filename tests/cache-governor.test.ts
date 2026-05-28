@@ -103,6 +103,17 @@ test('retainOnly drops static entries outside the active RAM plan', () => {
   assert.equal(g.bytes(), 4);
 });
 
+test('CacheGovernor can keep an oversized current static render protected', () => {
+  const g = new CacheGovernor({ maxBytes: 4 });
+  g.setOrder(['/current.jpg']);
+  g.setCurrentIndex(0);
+
+  g.admit('/current.jpg', fakeBitmap(2, 2), undefined, { protectCurrent: true });
+
+  assert.equal(g.has('/current.jpg'), true);
+  assert.equal(g.bytes(), 16);
+});
+
 test('evictAll empties the cache', () => {
   const g = new CacheGovernor();
   let closed = 0;

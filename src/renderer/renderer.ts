@@ -23,6 +23,11 @@ import { disposeFrames } from './animation-disposal';
 import { SpeedHud } from './speed-hud';
 import { PositionHud } from './position-hud';
 import { PreloadPanel, type PreloadPanelItem, type PreloadPanelItemKind } from './preload-panel';
+import {
+  planPreloadBudgetCandidates,
+  type PreloadBudgetKind,
+  type PreloadBudgetPlan,
+} from './preload-budget';
 import { MAX_NATIVE_GIF_BYTES } from './animation-policy';
 import { PreparedMediaCache, type PreparedMedia } from './prepared-media-cache';
 import {
@@ -68,22 +73,20 @@ const preloadPanel = new PreloadPanel(dialogHost);
 const sortDialog = new SortDialog(dialogHost, {
   onSortChange: (entries, newIdx) => {
     album.reorder(entries, newIdx);
-    bumpEpoch();
+    beginNavigation();
     updatePreparedOrder();
     showPositionHud();
     refreshPreloadPanel({ reveal: true });
-    schedulePreloads();
-    void renderCurrent();
+    renderCurrentThenSchedule();
   },
   onJumpTo: (idx) => {
     if (idx < 0 || idx >= album.size()) return;
     album.state.currentIndex = idx;
-    bumpEpoch();
+    beginNavigation();
     updatePreparedOrder();
     showPositionHud();
     refreshPreloadPanel({ reveal: true });
-    schedulePreloads();
-    void renderCurrent();
+    renderCurrentThenSchedule();
   },
 });
 
@@ -116,17 +119,40 @@ function applyPreferences(prefs: UserPreferences): void {
 
 let navEpoch = 0;
 let albumEpoch = 0;
+let nativeFallbackToken = 0;
 function bumpEpoch(): number {
   navEpoch += 1;
+  nativeFallbackToken += 1;
   return navEpoch;
 }
 preloader.setEpochSupplier(() => albumEpoch);
+
+function beginNavigation(): void {
+  bumpEpoch();
+  preloader.cancelScheduled();
+  animatedPreloader.cancelScheduled();
+  stopActiveAnimation();
+}
+
+function beginNativeFallback(): number {
+  nativeFallbackToken += 1;
+  return nativeFallbackToken;
+}
+
+function cancelNativeFallbacks(): void {
+  nativeFallbackToken += 1;
+}
+
+function isNativeFallbackCurrent(token: number | undefined): boolean {
+  return token === undefined || token === nativeFallbackToken;
+}
 
 function stopActiveAnimation(): void {
   gifHost.stop();
 }
 
 function clearAllSurfaces(): void {
+  cancelNativeFallbacks();
   stopActiveAnimation();
   nativeImageHost.clear();
   painter.clear();
@@ -153,10 +179,14 @@ async function renderCurrent(): Promise<void> {
   }
 }
 
-async function showNativePath(filePath: string, myEpoch: number): Promise<void> {
+async function showNativePath(
+  filePath: string,
+  myEpoch: number,
+  options: { fallbackToken?: number } = {},
+): Promise<void> {
   const url = await window.api.fileUrl(filePath);
-  if (myEpoch !== navEpoch) return;
-  await showNativeUrl(url, myEpoch);
+  if (myEpoch !== navEpoch || !isNativeFallbackCurrent(options.fallbackToken)) return;
+  await showNativeUrl(url, myEpoch, options);
 }
 
 async function renderPreparedOrGif(current: AlbumEntryDTO, myEpoch: number): Promise<void> {
@@ -165,7 +195,21 @@ async function renderPreparedOrGif(current: AlbumEntryDTO, myEpoch: number): Pro
     await commitPreparedMedia(prepared, myEpoch);
     return;
   }
-  await renderGif(current, myEpoch);
+  const fallbackToken = beginNativeFallback();
+  const nativePlayback = showNativePath(current.path, myEpoch, { fallbackToken }).catch((err) => {
+    console.warn('[render] gif native playback failed:', current.path, err);
+  });
+  const preparedCurrent = await animatedPreloader.ensure(current, album.index(), {
+    estimatedBytes: estimatePreparedMediaBytes(current),
+    protectCurrent: true,
+    reason: 'current',
+  });
+  if (myEpoch !== navEpoch) return;
+  if (preparedCurrent?.kind === 'animation') {
+    await commitPreparedMedia(preparedCurrent, myEpoch);
+    return;
+  }
+  await nativePlayback;
 }
 
 async function renderPreparedOrWebp(current: AlbumEntryDTO, myEpoch: number): Promise<void> {
@@ -184,6 +228,7 @@ async function renderPreparedOrWebp(current: AlbumEntryDTO, myEpoch: number): Pr
 
 async function commitPreparedMedia(media: PreparedMedia, myEpoch: number): Promise<void> {
   if (media.kind === 'animation') {
+    cancelNativeFallbacks();
     stopActiveAnimation();
     nativeImageHost.clear();
     const cacheOwned = preparedMediaCache.has(media.path);
@@ -195,9 +240,14 @@ async function commitPreparedMedia(media: PreparedMedia, myEpoch: number): Promi
   await showNativeUrl(media.url, myEpoch);
 }
 
-async function showNativeUrl(url: string, myEpoch: number): Promise<void> {
+async function showNativeUrl(
+  url: string,
+  myEpoch: number,
+  options: { fallbackToken?: number } = {},
+): Promise<void> {
+  if (!isNativeFallbackCurrent(options.fallbackToken)) return;
   const loaded = await nativeImageHost.showUrlWhenReady(url);
-  if (myEpoch !== navEpoch) {
+  if (myEpoch !== navEpoch || !isNativeFallbackCurrent(options.fallbackToken)) {
     if (loaded) nativeImageHost.clear();
     return;
   }
@@ -227,6 +277,7 @@ async function renderWebp(current: AlbumEntryDTO, myEpoch: number): Promise<void
     }
 
     if (animation) {
+      cancelNativeFallbacks();
       stopActiveAnimation();
       nativeImageHost.clear();
       gifHost.play(animation);
@@ -248,10 +299,11 @@ async function renderStatic(filePath: string, myEpoch: number): Promise<void> {
     if (cached) {
       bitmap = cached.bitmap as unknown as ImageBitmap;
     } else {
-      bitmap = await preloader.fetchAndDecode(filePath, albumEpoch);
+      bitmap = await preloader.fetchAndDecode(filePath, albumEpoch, { protectAdmitted: true });
     }
     if (myEpoch !== navEpoch) return;
     if (bitmap) {
+      cancelNativeFallbacks();
       stopActiveAnimation();
       nativeImageHost.clear();
       painter.drawImage(bitmap);
@@ -263,59 +315,22 @@ async function renderStatic(filePath: string, myEpoch: number): Promise<void> {
   }
 }
 
-async function renderGif(current: AlbumEntryDTO, myEpoch: number): Promise<void> {
-  const filePath = current.path;
-  const nativePlayback = showNativePath(filePath, myEpoch).catch((err) => {
-    console.warn('[render] gif native playback failed:', filePath, err);
-  });
-  try {
-    if (shouldPrepareNative(current)) {
-      await nativePlayback;
-      return;
-    }
-
-    const bytes = await window.api.readFile(filePath);
-    if (myEpoch !== navEpoch) return;
-    if (bytes.byteLength > MAX_NATIVE_GIF_BYTES) {
-      await nativePlayback;
-      return;
-    }
-
-    const parsed = await decodeGifBytes(bytes);
-    if (myEpoch !== navEpoch) {
-      if (parsed) disposeFrames(parsed.frames);
-      return;
-    }
-    if (parsed && parsed.frames.length > 0) {
-      stopActiveAnimation();
-      nativeImageHost.clear();
-      gifHost.play({ ...parsed, dispose: () => disposeFrames(parsed.frames) });
-      return;
-    }
-    await nativePlayback;
-  } catch (err) {
-    console.warn('[render] gif failed:', filePath, err);
-  }
-}
-
 installKeyboard({
   onPrev: () => {
-    bumpEpoch();
     album.prev();
+    beginNavigation();
     updatePreparedOrder();
     showPositionHud();
     refreshPreloadPanel({ reveal: true });
-    schedulePreloads();
-    void renderCurrent();
+    renderCurrentThenSchedule();
   },
   onNext: () => {
-    bumpEpoch();
     album.next();
+    beginNavigation();
     updatePreparedOrder();
     showPositionHud();
     refreshPreloadPanel({ reveal: true });
-    schedulePreloads();
-    void renderCurrent();
+    renderCurrentThenSchedule();
   },
   onFullscreen: () => {
     void window.api.toggleFullscreen();
@@ -335,6 +350,7 @@ installKeyboard({
 window.api.onAlbumLoad((payload) => {
   albumEpoch += 1;
   bumpEpoch();
+  preloader.cancelScheduled();
   governor.evictAll();
   preparedMediaCache.clear();
   animatedPreloader.clear();
@@ -342,8 +358,7 @@ window.api.onAlbumLoad((payload) => {
   updatePreparedOrder();
   showPositionHud();
   refreshPreloadPanel({ reveal: true });
-  void renderCurrent();
-  schedulePreloads();
+  renderCurrentThenSchedule();
 });
 
 window.api.onAlbumProgress((payload) => {
@@ -387,18 +402,16 @@ function updatePreparedOrder(): void {
   refreshPreloadPanel();
 }
 
-interface PreloadBudgetPlan {
-  allowedPaths: Set<string>;
-  staticBytes: number;
-  animatedBytes: number;
-}
-
 interface ScheduleAnimatedPreloadOptions {
   protectCurrent?: boolean;
   allowedPaths?: Set<string>;
 }
 
-function schedulePreloads(options: { protectCurrent?: boolean } = {}): void {
+function renderCurrentThenSchedule(): void {
+  void renderCurrent().finally(() => schedulePreloads({ protectCurrent: true }));
+}
+
+function schedulePreloads(options: { protectCurrent?: boolean } = { protectCurrent: true }): void {
   if (album.size() === 0) return;
   const plan = applyPlannedPreloadBudgets(options);
   preloader.scheduleAll(
@@ -408,7 +421,11 @@ function schedulePreloads(options: { protectCurrent?: boolean } = {}): void {
       progressToast.update({ phase: 'preloading', completed, total });
       refreshPreloadPanel();
     },
-    { currentIndex: album.index(), allowedPaths: plan.allowedPaths },
+    {
+      protectCurrent: options.protectCurrent,
+      currentIndex: album.index(),
+      allowedPaths: plan.allowedPaths,
+    },
   );
   scheduleAnimatedPreload({
     ...options,
@@ -419,11 +436,11 @@ function schedulePreloads(options: { protectCurrent?: boolean } = {}): void {
 function applyPlannedPreloadBudgets(options: { protectCurrent?: boolean } = {}): PreloadBudgetPlan {
   const plan = planPreloadBudget();
   if (album.size() === 0) {
-    governor.setLimit(currentPreferences.preload.animatedMemoryLimitBytes);
+    governor.setLimit(currentPreferences.preload.animatedMemoryLimitBytes, options);
     preparedMediaCache.setLimit(currentPreferences.preload.animatedMemoryLimitBytes, options);
     return plan;
   }
-  governor.setLimit(plan.staticBytes);
+  governor.setLimit(plan.staticBytes, options);
   preparedMediaCache.setLimit(plan.animatedBytes, options);
   return plan;
 }
@@ -441,7 +458,7 @@ function planPreloadBudget(): PreloadBudgetPlan {
   const currentIndex = album.index();
   const candidates = entries
     .map((entry, index) => ({
-      entry,
+      path: entry.path,
       index,
       kind: preloadBudgetKind(entry),
       bytes: estimatePreloadEntryBytes(entry, totalLimit),
@@ -450,34 +467,21 @@ function planPreloadBudget(): PreloadBudgetPlan {
       (
         item,
       ): item is {
-        entry: AlbumEntryDTO;
+        path: string;
         index: number;
-        kind: 'static' | 'animated';
+        kind: PreloadBudgetKind;
         bytes: number;
       } => item.kind !== null && item.bytes !== null,
-    )
-    .sort(
-      (a, b) =>
-        wrapDistance(a.index, currentIndex, entries.length) -
-          wrapDistance(b.index, currentIndex, entries.length) || a.index - b.index,
     );
-
-  let plannedBytes = 0;
-  for (const candidate of candidates) {
-    if (candidate.bytes > totalLimit) continue;
-    if (plannedBytes + candidate.bytes > totalLimit) continue;
-    plannedBytes += candidate.bytes;
-    plan.allowedPaths.add(candidate.entry.path);
-    if (candidate.kind === 'static') {
-      plan.staticBytes += candidate.bytes;
-    } else {
-      plan.animatedBytes += candidate.bytes;
-    }
-  }
-  return plan;
+  return planPreloadBudgetCandidates({
+    candidates,
+    currentIndex,
+    totalEntries: entries.length,
+    totalLimit,
+  });
 }
 
-function preloadBudgetKind(entry: AlbumEntryDTO): 'static' | 'animated' | null {
+function preloadBudgetKind(entry: AlbumEntryDTO): PreloadBudgetKind | null {
   const kind = mediaKindForEntry(entry);
   if (kind === 'static-bitmap') return 'static';
   if (kind === 'animated-gif' || kind === 'webp') return 'animated';
@@ -491,12 +495,6 @@ function estimatePreloadEntryBytes(entry: AlbumEntryDTO, limitBytes: number): nu
     return Math.max(1, entry.encodedBytes ?? 1);
   }
   return estimatePreparedMediaBytesForLimit(entry, limitBytes);
-}
-
-function wrapDistance(index: number, currentIndex: number, total: number): number {
-  if (total <= 0) return 0;
-  const delta = Math.abs(index - currentIndex);
-  return Math.min(delta, total - delta);
 }
 
 function scheduleAnimatedPreload(options: ScheduleAnimatedPreloadOptions = {}): void {
@@ -690,7 +688,7 @@ function estimatePreparedMediaBytesForLimit(
   limitBytes: number,
 ): number | null {
   if (!isFinitePositive(entry.encodedBytes) && !isFinitePositive(entry.allFramesDecodedBytes)) {
-    return null;
+    return limitBytes;
   }
   if (shouldPrepareNativeWithin(entry, limitBytes)) return Math.max(1, entry.encodedBytes ?? 1);
   if (isFinitePositive(entry.allFramesDecodedBytes)) return entry.allFramesDecodedBytes!;

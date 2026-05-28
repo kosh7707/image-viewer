@@ -38,6 +38,11 @@ export interface CacheGovernorOptions {
   onEvict?: (path: string, entry: CacheEntry) => void;
 }
 
+export interface CacheAdmitOptions {
+  protectCurrent?: boolean;
+  protectPath?: string;
+}
+
 export const DEFAULT_MAX_ENTRIES = 20;
 export const DEFAULT_MAX_BYTES = 3_000_000_000; // 3 GB
 
@@ -64,25 +69,27 @@ export class CacheGovernor {
     return this.maxBytes;
   }
 
-  setLimit(maxBytes: number): void {
+  setLimit(maxBytes: number, options: CacheAdmitOptions = {}): void {
     this.maxBytes = Math.max(0, Math.floor(maxBytes));
-    this.evictIfNeeded();
+    this.evictIfNeeded(this.protectedPaths(options));
   }
 
-  setOrder(paths: string[]): void {
+  setOrder(paths: string[], options: CacheAdmitOptions = {}): void {
     this.order.clear();
     this.orderLength = paths.length;
     paths.forEach((path, index) => this.order.set(path, index));
-    this.evictIfNeeded();
+    this.evictIfNeeded(this.protectedPaths(options));
   }
 
-  setCurrentIndex(index: number): void {
+  setCurrentIndex(index: number, options: CacheAdmitOptions = {}): void {
     this.currentIndex = Math.max(0, Math.floor(index));
-    this.evictIfNeeded();
+    this.evictIfNeeded(this.protectedPaths(options));
   }
 
-  retainOnly(paths: ReadonlySet<string>): void {
+  retainOnly(paths: ReadonlySet<string>, options: CacheAdmitOptions = {}): void {
+    const protectedPaths = this.protectedPaths(options);
     for (const path of Array.from(this.entries.keys())) {
+      if (protectedPaths.has(path)) continue;
       if (!paths.has(path)) this.evict(path);
     }
   }
@@ -107,7 +114,12 @@ export class CacheGovernor {
    * `bytes = bitmap.width * bitmap.height * 4 + (gifFrameBytes ?? 0)`.
    * After admit, eviction runs until both bounds pass.
    */
-  admit(path: string, bitmap: BitmapLike, gifFrameBytes?: number): CacheEntry {
+  admit(
+    path: string,
+    bitmap: BitmapLike,
+    gifFrameBytes?: number,
+    options: CacheAdmitOptions = {},
+  ): CacheEntry {
     if (this.entries.has(path)) {
       // Replace existing entry; subtract old bytes.
       const old = this.entries.get(path)!;
@@ -130,7 +142,7 @@ export class CacheGovernor {
     };
     this.entries.set(path, entry);
     this.totalBytes += bytes;
-    this.evictIfNeeded();
+    this.evictIfNeeded(this.protectedPaths(options));
     return entry;
   }
 
@@ -149,9 +161,9 @@ export class CacheGovernor {
    * Evict entries until invariants hold:
    *   size <= maxEntries AND totalBytes <= maxBytes.
    */
-  evictIfNeeded(): void {
+  evictIfNeeded(protectedPaths = new Set<string>()): void {
     while (this.entries.size > this.maxEntries || this.totalBytes > this.maxBytes) {
-      const victim = this.pickVictim();
+      const victim = this.pickVictim(protectedPaths);
       if (!victim) break;
       this.evict(victim);
     }
@@ -200,9 +212,10 @@ export class CacheGovernor {
     return Array.from(this.entries.keys());
   }
 
-  private pickVictim(): string | null {
+  private pickVictim(protectedPaths: Set<string>): string | null {
     let best: { path: string; distance: number; entry: CacheEntry } | null = null;
     for (const [path, entry] of this.entries) {
+      if (protectedPaths.has(path)) continue;
       const distance = this.distanceFromCurrent(path);
       if (
         !best ||
@@ -220,6 +233,21 @@ export class CacheGovernor {
     if (index === undefined || this.orderLength <= 0) return Number.MAX_SAFE_INTEGER;
     const delta = Math.abs(index - this.currentIndex);
     return Math.min(delta, this.orderLength - delta);
+  }
+
+  private currentPath(): string | null {
+    for (const [path, index] of this.order) {
+      if (index === this.currentIndex) return path;
+    }
+    return null;
+  }
+
+  private protectedPaths(options: CacheAdmitOptions): Set<string> {
+    return new Set(
+      [options.protectPath, options.protectCurrent ? this.currentPath() : null].filter(
+        (path): path is string => Boolean(path),
+      ),
+    );
   }
 }
 
