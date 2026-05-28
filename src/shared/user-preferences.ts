@@ -3,6 +3,7 @@ export interface UserPreferences {
     speedMultiplier: number;
   };
   preload: {
+    /** Legacy key name; now governs the all-image preload RAM budget. */
     animatedMemoryLimitBytes: number;
   };
 }

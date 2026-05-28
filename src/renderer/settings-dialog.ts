@@ -93,7 +93,7 @@ export class SettingsDialog {
     sectionTitle.textContent = 'Preload';
     const description = document.createElement('p');
     description.textContent =
-      'GIF/WebP frames are prepared within this memory limit. When it is exceeded, far items unload first.';
+      'Images are kept ready within this memory limit. The viewer fills the budget from the current image outward and unloads far items first.';
 
     const options = document.createElement('div');
     options.className = 'settings-memory-options';

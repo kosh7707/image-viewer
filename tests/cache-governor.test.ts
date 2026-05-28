@@ -74,6 +74,35 @@ test('LRU touch on get: most-recently-used survives', () => {
   assert.equal(g.has('d'), true);
 });
 
+test('sorted-index policy evicts the farthest static preload first', () => {
+  const g = new CacheGovernor({ maxBytes: 12 });
+  g.setOrder(['/a.jpg', '/b.jpg', '/c.jpg', '/d.jpg']);
+  g.setCurrentIndex(2);
+
+  g.admit('/a.jpg', fakeBitmap(1, 1));
+  g.admit('/b.jpg', fakeBitmap(1, 1));
+  g.admit('/c.jpg', fakeBitmap(1, 1));
+  g.admit('/d.jpg', fakeBitmap(1, 1));
+
+  assert.equal(g.bytes(), 12);
+  assert.equal(g.has('/c.jpg'), true, 'current entry survives');
+  assert.equal(g.has('/b.jpg'), true, 'near previous survives');
+  assert.equal(g.has('/d.jpg'), true, 'near next survives');
+  assert.equal(g.has('/a.jpg'), false, 'farthest static preload is evicted');
+});
+
+test('retainOnly drops static entries outside the active RAM plan', () => {
+  const g = new CacheGovernor({ maxBytes: 100 });
+  g.admit('/far.jpg', fakeBitmap(1, 1));
+  g.admit('/near.jpg', fakeBitmap(1, 1));
+
+  g.retainOnly(new Set(['/near.jpg']));
+
+  assert.equal(g.has('/near.jpg'), true);
+  assert.equal(g.has('/far.jpg'), false);
+  assert.equal(g.bytes(), 4);
+});
+
 test('evictAll empties the cache', () => {
   const g = new CacheGovernor();
   let closed = 0;

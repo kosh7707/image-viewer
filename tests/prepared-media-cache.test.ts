@@ -80,6 +80,23 @@ test('PreparedMediaCache can lower the limit while explicitly preserving current
   assert.equal(cache.totalBytes(), 80);
 });
 
+test('PreparedMediaCache retainOnly prunes stale preloads but can protect current playback', () => {
+  const cache = new PreparedMediaCache(200);
+  cache.setOrder(['/current.gif', '/stale.gif']);
+  cache.setCurrentIndex(0);
+  const current = media('/current.gif', 80);
+  const stale = media('/stale.gif', 80);
+  cache.put(current);
+  cache.put(stale);
+
+  cache.retainOnly(new Set(), { protectCurrent: true });
+
+  assert.equal(cache.has('/current.gif'), true);
+  assert.equal(cache.has('/stale.gif'), false);
+  assert.equal(current.disposed, 0);
+  assert.equal(stale.disposed, 1);
+});
+
 test('PreparedMediaCache evicts oversized inserted media when current protection is not requested', () => {
   const cache = new PreparedMediaCache(40);
   cache.setOrder(['/a.gif']);

@@ -1,8 +1,9 @@
 /**
- * CacheGovernor — bounded LRU over decoded image entries.
+ * CacheGovernor — bounded cache over decoded static image entries.
  *
  * Invariant (AC-P4): `count <= MAX_ENTRIES AND projectedBytes <= MAX_BYTES`.
- * Whichever bound binds first triggers LRU eviction (oldest insertion first).
+ * Whichever bound binds first evicts entries farthest from the current sorted
+ * index; LRU is only the tie-breaker.
  *
  * GPU pre-warm is intentionally NOT in this class — it depends on
  * OffscreenCanvas/createImageBitmap which aren't available in a pure
@@ -43,17 +44,47 @@ export const DEFAULT_MAX_BYTES = 3_000_000_000; // 3 GB
 export class CacheGovernor {
   // Map preserves insertion order; we mimic LRU by re-inserting on get/has.
   private entries: Map<string, CacheEntry> = new Map();
+  private order = new Map<string, number>();
+  private orderLength = 0;
+  private currentIndex = 0;
   private totalBytes = 0;
   private counter = 0;
 
-  readonly maxEntries: number;
-  readonly maxBytes: number;
+  private maxEntries: number;
+  private maxBytes: number;
   private readonly onEvict?: (path: string, entry: CacheEntry) => void;
 
   constructor(opts: CacheGovernorOptions = {}) {
     this.maxEntries = opts.maxEntries ?? DEFAULT_MAX_ENTRIES;
     this.maxBytes = opts.maxBytes ?? DEFAULT_MAX_BYTES;
     this.onEvict = opts.onEvict;
+  }
+
+  limitBytes(): number {
+    return this.maxBytes;
+  }
+
+  setLimit(maxBytes: number): void {
+    this.maxBytes = Math.max(0, Math.floor(maxBytes));
+    this.evictIfNeeded();
+  }
+
+  setOrder(paths: string[]): void {
+    this.order.clear();
+    this.orderLength = paths.length;
+    paths.forEach((path, index) => this.order.set(path, index));
+    this.evictIfNeeded();
+  }
+
+  setCurrentIndex(index: number): void {
+    this.currentIndex = Math.max(0, Math.floor(index));
+    this.evictIfNeeded();
+  }
+
+  retainOnly(paths: ReadonlySet<string>): void {
+    for (const path of Array.from(this.entries.keys())) {
+      if (!paths.has(path)) this.evict(path);
+    }
   }
 
   has(path: string): boolean {
@@ -65,6 +96,7 @@ export class CacheGovernor {
     if (entry !== undefined) {
       // Touch: move to most-recently-used end.
       this.entries.delete(path);
+      entry.insertedAt = ++this.counter;
       this.entries.set(path, entry);
     }
     return entry;
@@ -114,14 +146,14 @@ export class CacheGovernor {
   }
 
   /**
-   * Evict LRU entries until invariants hold:
+   * Evict entries until invariants hold:
    *   size <= maxEntries AND totalBytes <= maxBytes.
    */
   evictIfNeeded(): void {
     while (this.entries.size > this.maxEntries || this.totalBytes > this.maxBytes) {
-      const oldest = this.entries.keys().next();
-      if (oldest.done || oldest.value === undefined) break;
-      this.evict(oldest.value);
+      const victim = this.pickVictim();
+      if (!victim) break;
+      this.evict(victim);
     }
   }
 
@@ -166,6 +198,28 @@ export class CacheGovernor {
   /** Snapshot of paths in LRU order (oldest first). */
   keys(): string[] {
     return Array.from(this.entries.keys());
+  }
+
+  private pickVictim(): string | null {
+    let best: { path: string; distance: number; entry: CacheEntry } | null = null;
+    for (const [path, entry] of this.entries) {
+      const distance = this.distanceFromCurrent(path);
+      if (
+        !best ||
+        distance > best.distance ||
+        (distance === best.distance && entry.insertedAt < best.entry.insertedAt)
+      ) {
+        best = { path, distance, entry };
+      }
+    }
+    return best?.path ?? null;
+  }
+
+  private distanceFromCurrent(path: string): number {
+    const index = this.order.get(path);
+    if (index === undefined || this.orderLength <= 0) return Number.MAX_SAFE_INTEGER;
+    const delta = Math.abs(index - this.currentIndex);
+    return Math.min(delta, this.orderLength - delta);
   }
 }
 

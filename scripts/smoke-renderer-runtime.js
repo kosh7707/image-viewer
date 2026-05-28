@@ -356,7 +356,14 @@ async function main() {
   }
   win.webContents.send('album:load', {
     folder: path.dirname(REAL_GIF),
-    entries: [{ path: REAL_GIF, mtimeMs: Date.now(), encodedBytes: fs.statSync(REAL_GIF).size }],
+    entries: [
+      {
+        path: REAL_GIF,
+        mtimeMs: Date.now(),
+        encodedBytes: fs.statSync(REAL_GIF).size,
+        allFramesDecodedBytes: 64 * 1024 * 1024,
+      },
+    ],
     currentIndex: 0,
   });
   await waitFor(
@@ -393,6 +400,96 @@ async function main() {
     throw new Error(`real GIF decoded to black canvas: ${JSON.stringify(realGifCanvas)}`);
   }
   trace(`gif:real-decoded-visible:${JSON.stringify(realGifCanvas)}`);
+
+  const escapedRealGifPath = JSON.stringify(REAL_GIF);
+  win.webContents.send('album:load', {
+    folder: tempDir,
+    entries: [
+      {
+        path: REAL_GIF,
+        mtimeMs: Date.now(),
+        encodedBytes: fs.statSync(REAL_GIF).size,
+        allFramesDecodedBytes: 64 * 1024 * 1024,
+      },
+      {
+        path: gifPath,
+        mtimeMs: Date.now(),
+        encodedBytes: fs.statSync(gifPath).size,
+        allFramesDecodedBytes: 8,
+      },
+    ],
+    currentIndex: 0,
+  });
+  await waitFor(
+    win,
+    `(() => {
+      const cache = window.__viewer && window.__viewer.preparedMediaCache;
+      return Boolean(cache && cache.has(${escapedRealGifPath}));
+    })()`,
+    10_000,
+    'real GIF prepared cache fill',
+  );
+  await win.webContents.executeJavaScript(
+    `window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))`,
+    true,
+  );
+  await waitFor(
+    win,
+    `(() => {
+      const viewer = window.__viewer;
+      const h = viewer && viewer.gifHost;
+      return Boolean(viewer && viewer.album && viewer.album.index() === 1 && h && h.gif && h.gif.frames.length === 2);
+    })()`,
+    5_000,
+    'navigate away from cached GIF',
+  );
+  await win.webContents.executeJavaScript(
+    `window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }))`,
+    true,
+  );
+  await waitFor(
+    win,
+    `(() => {
+      const h = window.__viewer && window.__viewer.gifHost;
+      return Boolean(h && h.gif && h.gif.frames.length > 10 && h.gif.frames[0].width > 0);
+    })()`,
+    5_000,
+    'cached GIF first reuse',
+  );
+  await win.webContents.executeJavaScript(
+    `window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))`,
+    true,
+  );
+  await waitFor(
+    win,
+    `(() => {
+      const viewer = window.__viewer;
+      const h = viewer && viewer.gifHost;
+      return Boolean(viewer && viewer.album && viewer.album.index() === 1 && h && h.gif && h.gif.frames.length === 2);
+    })()`,
+    5_000,
+    'navigate away after cached GIF reuse',
+  );
+  await win.webContents.executeJavaScript(
+    `window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }))`,
+    true,
+  );
+  await waitFor(
+    win,
+    `(() => {
+      const h = window.__viewer && window.__viewer.gifHost;
+      return Boolean(
+        h &&
+          h.gif &&
+          h.gif.frames.length > 10 &&
+          h.gif.frames[0].width > 0 &&
+          h.gif.frames[0].height > 0
+      );
+    })()`,
+    5_000,
+    'cached GIF remains playable after stop/reuse',
+  );
+  trace('gif:cached-reuse-preserves-frames');
 
   const webpSupport = await win.webContents.executeJavaScript(
     `(

@@ -62,6 +62,14 @@ export class PreparedMediaCache {
     this.enforceLimit(this.protectedPaths(options));
   }
 
+  retainOnly(paths: ReadonlySet<string>, options: EnforceLimitOptions = {}): void {
+    const protectedPaths = this.protectedPaths(options);
+    for (const path of Array.from(this.entries.keys())) {
+      if (paths.has(path) || protectedPaths.has(path)) continue;
+      this.delete(path);
+    }
+  }
+
   has(path: string): boolean {
     return this.entries.has(path);
   }

@@ -109,6 +109,50 @@ test('AnimatedMediaPreloader stops scheduling once the preload memory budget is 
   assert.equal(cache.has('/d.gif'), false);
 });
 
+test('AnimatedMediaPreloader skips oversized near entries and keeps filling the budget', async () => {
+  const cache = new PreparedMediaCache(250);
+  const calls: string[] = [];
+  const preloader = new AnimatedMediaPreloader(cache, async (entry) => {
+    calls.push(entry.path);
+    return media(entry.path, 100);
+  });
+
+  await preloader.schedule(
+    [entry('/a.gif'), entry('/b.gif'), entry('/c.gif'), entry('/d.gif')],
+    0,
+    {
+      estimateBytes: (item) => (item.path === '/b.gif' ? 300 : 100),
+    },
+  );
+
+  assert.deepEqual(calls, ['/a.gif', '/d.gif']);
+  assert.equal(cache.totalBytes(), 200);
+  assert.equal(cache.has('/a.gif'), true);
+  assert.equal(cache.has('/b.gif'), false);
+  assert.equal(cache.has('/d.gif'), true);
+});
+
+test('AnimatedMediaPreloader drops cached entries outside the active RAM plan', async () => {
+  const cache = new PreparedMediaCache(250);
+  const stale = media('/stale.gif', 100);
+  cache.put(stale);
+  const calls: string[] = [];
+  const preloader = new AnimatedMediaPreloader(cache, async (item) => {
+    calls.push(item.path);
+    return media(item.path, 100);
+  });
+
+  await preloader.schedule([entry('/a.gif'), entry('/b.gif'), entry('/c.gif')], 0, {
+    allowedPaths: new Set(['/a.gif', '/b.gif']),
+    estimateBytes: () => 100,
+  });
+
+  assert.deepEqual(calls, ['/a.gif', '/b.gif']);
+  assert.equal(cache.has('/stale.gif'), false);
+  assert.equal(stale.disposed, 1);
+  assert.equal(cache.totalBytes(), 200);
+});
+
 test('AnimatedMediaPreloader aborts stale in-flight preparations when navigation reschedules', async () => {
   const cache = new PreparedMediaCache(1_000);
   const started = new Set<string>();

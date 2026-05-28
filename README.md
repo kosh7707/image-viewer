@@ -17,15 +17,16 @@ Supported formats: `.jpg`, `.jpeg`, `.png`, `.webp`, `.gif`.
 
 Right-click anywhere for the context menu: Open File…, Open Folder…, Sort…, `Speed: N.N×` (label-only, updates live), Exit. Pressing `[` / `]` also shows a brief translucent speed HUD in the upper-right corner.
 
-## Cache & preload policy (v2)
+## Cache & preload policy (v3)
 
 - "Open Folder…" recursively walks the chosen directory up to depth 4 (deeper levels are silently dropped) and collects every supported image.
 - Before loading, headers are parsed to estimate the _decoded_ RAM footprint:
   - JPEG/PNG/static WebP → `width × height × 4`
   - GIF → `width × height × 4 × frame_count` (each frame becomes a full-canvas `ImageBitmap` in the decoder worker)
   - Animated WebP → `width × height × 4 × ANMF_frame_count` (parsed from the WebP RIFF container)
-- If the total exceeds **4 GiB** the user gets a confirm dialog ("이 폴더는 약 N MB 사용 예상…"). "Cancel" keeps the previously loaded album; "Proceed" continues.
-- Approved static bitmap entries (JPEG/PNG/static WebP) are preloaded into the renderer's `CacheGovernor` (entry/byte caps set to `MAX_SAFE_INTEGER`; the 4 GB dialog is the real RAM gate). Background concurrency is capped at 8 simultaneous decodes. GIF and animated WebP stay on animated/native playback paths instead of being collapsed through `createImageBitmap`.
+- If the static bitmap estimate exceeds **4 GiB** the user gets a confirm dialog ("이 폴더는 약 N MB 사용 예상…"). "Cancel" keeps the previously loaded album; "Proceed" continues.
+- The Settings > Preload memory limit is the real runtime RAM budget. The renderer fills that budget from the current sorted index outward, skips entries that do not fit, and keeps filling later smaller entries when possible.
+- Static bitmap entries (JPEG/PNG/static WebP) are decoded into `ImageBitmap`s, admitted to `CacheGovernor`, and GPU-pre-warmed. GIF and animated WebP are prepared in `PreparedMediaCache` as decoded frame animations when they fit; oversized animated media uses the native `<img>` path rather than collapsing animation through `createImageBitmap`.
 - A single progress toast at the bottom-right shows `파일 찾는 중...` before exact totals are known, then `측정 중 X / N`, then `로딩 중 X / N (P%)`. It auto-dismisses after the final phase.
 - The right-click **Sort…** dialog lists every image in the loaded album and lets you sort by filename or modification time, ascending or descending. Clicking a row jumps to that image. Re-sorting preserves the currently displayed image.
 
@@ -57,7 +58,7 @@ npm test
 
 Runs `tsc` then `node --test dist/tests/*.test.js`. Suite covers:
 
-- `cache-governor` — count cap, byte cap, LRU touch, full eviction, re-admit accounting, warm flag.
+- `cache-governor` — byte cap, current-distance eviction, LRU tie-breaks, full eviction, re-admit accounting, warm flag.
 - `canvas-painter` — fullscreen-resize redraw replay.
 - `walk` — recursive collection, depth cap, symlink skip, hidden-dir skip, case-insensitive ext.
 - `measure` — PNG/JPEG/static WebP delegate to `image-size`; GIF and animated WebP count frames for RAM estimates; corrupt GIFs return a safe zero estimate.
@@ -100,8 +101,8 @@ The plan calls for `build/icon.ico`. This repo intentionally does NOT ship a bin
   - `album.ts` - entry list (path + mtime + optional measured metadata) + current index + reorder support.
   - `album-sort.ts` — pure sort helper (filename/mtime × asc/desc); preserves current path.
   - `canvas.ts` — black-background letterboxed `drawImage`; caches last bitmap and replays on resize so fullscreen toggles don't blank the canvas.
-  - `cache-governor.ts` — count + byte cap LRU; v2 instantiated with `MAX_SAFE_INTEGER` caps because the 4 GB confirm gate happens upstream.
-  - `preload-queue.ts` - `scheduleAll()` decodes every measured static bitmap path with bounded concurrency (8). GPU pre-warm via 1x1 drawImage to an `OffscreenCanvas`. GIF, animated WebP, and metadata-less WebP are skipped because they need animated/native playback paths.
+  - `cache-governor.ts` — byte-capped static `ImageBitmap` cache; evicts farthest-from-current entries first and uses LRU as the tie-breaker.
+  - `preload-queue.ts` - `scheduleAll()` decodes RAM-planned static bitmap paths with bounded concurrency (8). GPU pre-warm via 1x1 drawImage to an `OffscreenCanvas`. GIF, animated WebP, and metadata-less WebP are skipped because they need animated/native playback paths.
   - `animated-webp-decoder.ts` — WebCodecs `ImageDecoder` path for animated WebP: frame-index decode, microsecond-duration conversion, `VideoFrame` cleanup, `ImageBitmap` ownership.
   - `gif-host.ts` — decoded-animation `requestAnimationFrame` driver, `[/]` keys, hot-swappable speed, clamp `[0.1, 4.0]`.
   - `speed-hud.ts` - transient upper-right HUD shown after `[` / `]` speed changes for GIF and animated WebP.

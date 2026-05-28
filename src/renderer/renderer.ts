@@ -45,7 +45,7 @@ const painter = new CanvasPainter(canvasEl);
 const album = new Album();
 const governor = new CacheGovernor({
   maxEntries: Number.MAX_SAFE_INTEGER,
-  maxBytes: Number.MAX_SAFE_INTEGER,
+  maxBytes: DEFAULT_USER_PREFERENCES.preload.animatedMemoryLimitBytes,
 });
 const preloader = new PreloadQueue(governor);
 const gifHost = new GifHost(painter, (s) => pushSpeed(s));
@@ -72,7 +72,7 @@ const sortDialog = new SortDialog(dialogHost, {
     updatePreparedOrder();
     showPositionHud();
     refreshPreloadPanel({ reveal: true });
-    scheduleAnimatedPreload();
+    schedulePreloads();
     void renderCurrent();
   },
   onJumpTo: (idx) => {
@@ -82,7 +82,7 @@ const sortDialog = new SortDialog(dialogHost, {
     updatePreparedOrder();
     showPositionHud();
     refreshPreloadPanel({ reveal: true });
-    scheduleAnimatedPreload();
+    schedulePreloads();
     void renderCurrent();
   },
 });
@@ -110,8 +110,8 @@ void applySavedPreferences();
 function applyPreferences(prefs: UserPreferences): void {
   currentPreferences = prefs;
   gifHost.speedMultiplier = prefs.animation.speedMultiplier;
-  preparedMediaCache.setLimit(prefs.preload.animatedMemoryLimitBytes, { protectCurrent: true });
-  scheduleAnimatedPreload({ protectCurrent: true });
+  applyPlannedPreloadBudgets({ protectCurrent: true });
+  schedulePreloads({ protectCurrent: true });
 }
 
 let navEpoch = 0;
@@ -186,7 +186,9 @@ async function commitPreparedMedia(media: PreparedMedia, myEpoch: number): Promi
   if (media.kind === 'animation') {
     stopActiveAnimation();
     nativeImageHost.clear();
-    gifHost.play({ frames: media.frames, delays: media.delays });
+    const cacheOwned = preparedMediaCache.has(media.path);
+    const playable = cacheOwned ? preparedMediaCache.toPlayable(media.path) : media;
+    if (playable) gifHost.play(playable);
     return;
   }
 
@@ -303,7 +305,7 @@ installKeyboard({
     updatePreparedOrder();
     showPositionHud();
     refreshPreloadPanel({ reveal: true });
-    scheduleAnimatedPreload();
+    schedulePreloads();
     void renderCurrent();
   },
   onNext: () => {
@@ -312,7 +314,7 @@ installKeyboard({
     updatePreparedOrder();
     showPositionHud();
     refreshPreloadPanel({ reveal: true });
-    scheduleAnimatedPreload();
+    schedulePreloads();
     void renderCurrent();
   },
   onFullscreen: () => {
@@ -341,11 +343,7 @@ window.api.onAlbumLoad((payload) => {
   showPositionHud();
   refreshPreloadPanel({ reveal: true });
   void renderCurrent();
-  preloader.scheduleAll(album.entries(), albumEpoch, ({ completed, total }) => {
-    progressToast.update({ phase: 'preloading', completed, total });
-    refreshPreloadPanel();
-  });
-  scheduleAnimatedPreload();
+  schedulePreloads();
 });
 
 window.api.onAlbumProgress((payload) => {
@@ -381,12 +379,127 @@ window.api.onSettingsRequest(() => {
 };
 
 function updatePreparedOrder(): void {
-  preparedMediaCache.setOrder(album.entries().map((entry) => entry.path));
+  const paths = album.entries().map((entry) => entry.path);
+  preparedMediaCache.setOrder(paths);
   preparedMediaCache.setCurrentIndex(album.index());
+  governor.setOrder(paths);
+  governor.setCurrentIndex(album.index());
   refreshPreloadPanel();
 }
 
-function scheduleAnimatedPreload(options: { protectCurrent?: boolean } = {}): void {
+interface PreloadBudgetPlan {
+  allowedPaths: Set<string>;
+  staticBytes: number;
+  animatedBytes: number;
+}
+
+interface ScheduleAnimatedPreloadOptions {
+  protectCurrent?: boolean;
+  allowedPaths?: Set<string>;
+}
+
+function schedulePreloads(options: { protectCurrent?: boolean } = {}): void {
+  if (album.size() === 0) return;
+  const plan = applyPlannedPreloadBudgets(options);
+  preloader.scheduleAll(
+    album.entries(),
+    albumEpoch,
+    ({ completed, total }) => {
+      progressToast.update({ phase: 'preloading', completed, total });
+      refreshPreloadPanel();
+    },
+    { currentIndex: album.index(), allowedPaths: plan.allowedPaths },
+  );
+  scheduleAnimatedPreload({
+    ...options,
+    allowedPaths: plan.allowedPaths,
+  });
+}
+
+function applyPlannedPreloadBudgets(options: { protectCurrent?: boolean } = {}): PreloadBudgetPlan {
+  const plan = planPreloadBudget();
+  if (album.size() === 0) {
+    governor.setLimit(currentPreferences.preload.animatedMemoryLimitBytes);
+    preparedMediaCache.setLimit(currentPreferences.preload.animatedMemoryLimitBytes, options);
+    return plan;
+  }
+  governor.setLimit(plan.staticBytes);
+  preparedMediaCache.setLimit(plan.animatedBytes, options);
+  return plan;
+}
+
+function planPreloadBudget(): PreloadBudgetPlan {
+  const entries = album.entries();
+  const totalLimit = currentPreferences.preload.animatedMemoryLimitBytes;
+  const plan: PreloadBudgetPlan = {
+    allowedPaths: new Set<string>(),
+    staticBytes: 0,
+    animatedBytes: 0,
+  };
+  if (entries.length === 0) return plan;
+
+  const currentIndex = album.index();
+  const candidates = entries
+    .map((entry, index) => ({
+      entry,
+      index,
+      kind: preloadBudgetKind(entry),
+      bytes: estimatePreloadEntryBytes(entry, totalLimit),
+    }))
+    .filter(
+      (
+        item,
+      ): item is {
+        entry: AlbumEntryDTO;
+        index: number;
+        kind: 'static' | 'animated';
+        bytes: number;
+      } => item.kind !== null && item.bytes !== null,
+    )
+    .sort(
+      (a, b) =>
+        wrapDistance(a.index, currentIndex, entries.length) -
+          wrapDistance(b.index, currentIndex, entries.length) || a.index - b.index,
+    );
+
+  let plannedBytes = 0;
+  for (const candidate of candidates) {
+    if (candidate.bytes > totalLimit) continue;
+    if (plannedBytes + candidate.bytes > totalLimit) continue;
+    plannedBytes += candidate.bytes;
+    plan.allowedPaths.add(candidate.entry.path);
+    if (candidate.kind === 'static') {
+      plan.staticBytes += candidate.bytes;
+    } else {
+      plan.animatedBytes += candidate.bytes;
+    }
+  }
+  return plan;
+}
+
+function preloadBudgetKind(entry: AlbumEntryDTO): 'static' | 'animated' | null {
+  const kind = mediaKindForEntry(entry);
+  if (kind === 'static-bitmap') return 'static';
+  if (kind === 'animated-gif' || kind === 'webp') return 'animated';
+  return null;
+}
+
+function estimatePreloadEntryBytes(entry: AlbumEntryDTO, limitBytes: number): number | null {
+  if (preloadBudgetKind(entry) === 'static') {
+    if (isFinitePositive(entry.estimatedBytes)) return Math.ceil(entry.estimatedBytes);
+    if (entry.width && entry.height) return entry.width * entry.height * 4;
+    return Math.max(1, entry.encodedBytes ?? 1);
+  }
+  return estimatePreparedMediaBytesForLimit(entry, limitBytes);
+}
+
+function wrapDistance(index: number, currentIndex: number, total: number): number {
+  if (total <= 0) return 0;
+  const delta = Math.abs(index - currentIndex);
+  return Math.min(delta, total - delta);
+}
+
+function scheduleAnimatedPreload(options: ScheduleAnimatedPreloadOptions = {}): void {
   if (album.size() === 0) return;
   void animatedPreloader
     .schedule(album.entries(), album.index(), {
@@ -472,8 +585,12 @@ function preloadPanelKind(
 }
 
 function shouldPrepareNative(entry: AlbumEntryDTO): boolean {
+  return shouldPrepareNativeWithin(entry, preparedMediaCache.limitBytes());
+}
+
+function shouldPrepareNativeWithin(entry: AlbumEntryDTO, limitBytes: number): boolean {
   const allFrames = entry.allFramesDecodedBytes;
-  if (typeof allFrames === 'number' && allFrames > preparedMediaCache.limitBytes()) return true;
+  if (typeof allFrames === 'number' && allFrames > limitBytes) return true;
   const encoded = entry.encodedBytes;
   return typeof encoded === 'number' && encoded > MAX_NATIVE_GIF_BYTES;
 }
@@ -565,10 +682,17 @@ function estimateAnimationBytes(entry: AlbumEntryDTO, frameCount: number): numbe
 }
 
 function estimatePreparedMediaBytes(entry: AlbumEntryDTO): number | null {
+  return estimatePreparedMediaBytesForLimit(entry, preparedMediaCache.limitBytes());
+}
+
+function estimatePreparedMediaBytesForLimit(
+  entry: AlbumEntryDTO,
+  limitBytes: number,
+): number | null {
   if (!isFinitePositive(entry.encodedBytes) && !isFinitePositive(entry.allFramesDecodedBytes)) {
     return null;
   }
-  if (shouldPrepareNative(entry)) return Math.max(1, entry.encodedBytes ?? 1);
+  if (shouldPrepareNativeWithin(entry, limitBytes)) return Math.max(1, entry.encodedBytes ?? 1);
   if (isFinitePositive(entry.allFramesDecodedBytes)) return entry.allFramesDecodedBytes!;
   if (entry.width && entry.height && entry.frameCount) {
     return estimateAnimationBytes(entry, entry.frameCount);

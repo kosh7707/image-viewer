@@ -14,7 +14,7 @@ export interface AlbumEntryDTO {
   height?: number;
   /** Header-derived frame count; static images are 1, animated images are >1. */
   frameCount?: number;
-  /** Static preload/cache memory estimate in bytes. Animated media is usually 0. */
+  /** Static bitmap cache estimate in bytes. Animated preload uses allFramesDecodedBytes. */
   estimatedBytes?: number;
   /** Encoded file size in bytes. */
   encodedBytes?: number;
@@ -52,7 +52,7 @@ export interface ImageViewerApi {
   updateSpeed(speed: number): Promise<void>;
   /** Load persisted user preferences from Electron userData. */
   getPreferences(): Promise<UserPreferences>;
-  /** Persist the animated preload memory limit. */
+  /** Persist the all-image preload memory limit. */
   updateAnimatedPreloadMemoryLimit(bytes: number): Promise<UserPreferences>;
   /** Read an image file as bytes (validated by main). */
   readFile(filePath: string): Promise<Uint8Array>;

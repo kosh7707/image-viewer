@@ -26,6 +26,7 @@ export interface AnimatedEnsureOptions extends EnforceLimitOptions {
 
 export interface AnimatedScheduleOptions extends EnforceLimitOptions {
   estimateBytes?: EstimatePreparedMediaBytes;
+  allowedPaths?: Set<string>;
 }
 
 export interface AnimatedMediaPreloaderOptions {
@@ -134,6 +135,7 @@ export class AnimatedMediaPreloader {
       options,
     );
     this.cache.setCurrentIndex(currentIndex, options);
+    if (options.allowedPaths) this.cache.retainOnly(options.allowedPaths, options);
     const ordered = entries
       .map((entry, index) => ({
         entry,
@@ -141,6 +143,7 @@ export class AnimatedMediaPreloader {
         distance: circularDistance(index, currentIndex, entries.length),
       }))
       .filter(({ entry }) => isAnimatedPreloadEntry(entry))
+      .filter(({ entry }) => !options.allowedPaths || options.allowedPaths.has(entry.path))
       .sort((a, b) => a.distance - b.distance || a.index - b.index);
 
     const plannedPaths = this.planSchedule(ordered, options.estimateBytes);
@@ -207,7 +210,7 @@ export class AnimatedMediaPreloader {
         if (this.cache.has(entry.path)) plannedPaths.add(entry.path);
         continue;
       }
-      if (plannedBytes + bytes > limitBytes) break;
+      if (plannedBytes + bytes > limitBytes) continue;
       plannedPaths.add(entry.path);
       plannedBytes += bytes;
     }

@@ -153,15 +153,134 @@ test('PreloadQueue joins a matching in-flight decode instead of returning null',
   }
 });
 
+test('PreloadQueue schedules closest static entries that fit the RAM budget', async () => {
+  await withRendererRuntime(
+    {
+      '/p/a.png': new Uint8Array([1]),
+      '/p/b.png': new Uint8Array([1]),
+      '/p/c.png': new Uint8Array([1]),
+      '/p/d.png': new Uint8Array([1]),
+      '/p/stale.png': new Uint8Array([1]),
+    },
+    async (calls) => {
+      const governor = new CacheGovernor({ maxBytes: 12, maxEntries: Number.MAX_SAFE_INTEGER });
+      governor.admit('/p/stale.png', {
+        width: 1,
+        height: 1,
+        close() {
+          // test fake
+        },
+      });
+      const queue = new PreloadQueue(governor);
+
+      const final = await waitForPreload(
+        queue,
+        [
+          { path: '/p/a.png', mtimeMs: 1, estimatedBytes: 4 },
+          { path: '/p/b.png', mtimeMs: 1, estimatedBytes: 4 },
+          { path: '/p/c.png', mtimeMs: 1, estimatedBytes: 20 },
+          { path: '/p/d.png', mtimeMs: 1, estimatedBytes: 4 },
+        ],
+        {
+          currentIndex: 1,
+          allowedPaths: new Set(['/p/a.png', '/p/b.png', '/p/d.png']),
+        },
+      );
+
+      assert.deepEqual(calls.reads, ['/p/b.png', '/p/a.png', '/p/d.png']);
+      assert.equal(final.total, 3);
+      assert.equal(final.completed, 3);
+      assert.equal(governor.has('/p/stale.png'), false);
+    },
+  );
+});
+
+test('PreloadQueue drops an in-flight scheduled decode after the RAM plan changes', async () => {
+  const globals = globalThis as unknown as RuntimeGlobals;
+  const oldWindow = globals.window;
+  const oldCreateImageBitmap = globals.createImageBitmap;
+  const reads: string[] = [];
+  const bitmaps: FakeBitmap[] = [];
+  let releaseRead: ((bytes: Uint8Array) => void) | null = null;
+  const readGate = new Promise<Uint8Array>((resolve) => {
+    releaseRead = resolve;
+  });
+
+  globals.window = {
+    api: {
+      async readFile(filePath: string): Promise<Uint8Array> {
+        reads.push(filePath);
+        return await readGate;
+      },
+    },
+  };
+  globals.createImageBitmap = async (): Promise<ImageBitmap> => {
+    const bitmap: FakeBitmap = {
+      width: 2,
+      height: 3,
+      closed: false,
+      close(): void {
+        this.closed = true;
+      },
+    };
+    bitmaps.push(bitmap);
+    return bitmap as unknown as ImageBitmap;
+  };
+
+  try {
+    const governor = new CacheGovernor({ maxBytes: 4, maxEntries: Number.MAX_SAFE_INTEGER });
+    const queue = new PreloadQueue(governor);
+    const firstDone = new Promise<PreloadProgress>((resolve) => {
+      queue.scheduleAll(
+        [{ path: '/p/a.png', mtimeMs: 1, estimatedBytes: 4 }],
+        0,
+        (progress) => {
+          if (progress.completed >= progress.total) resolve(progress);
+        },
+        { currentIndex: 0, allowedPaths: new Set(['/p/a.png']) },
+      );
+    });
+    await waitFor(() => reads.length === 1);
+
+    queue.scheduleAll([{ path: '/p/a.png', mtimeMs: 1, estimatedBytes: 4 }], 0, undefined, {
+      currentIndex: 0,
+      allowedPaths: new Set(),
+    });
+    releaseRead!(new Uint8Array([1, 2, 3]));
+
+    const final = await firstDone;
+    assert.equal(final.completed, 1);
+    assert.equal(governor.has('/p/a.png'), false);
+    assert.equal(bitmaps[0]?.closed, true);
+  } finally {
+    globals.window = oldWindow;
+    globals.createImageBitmap = oldCreateImageBitmap;
+  }
+});
+
 function waitForPreload(
   queue: PreloadQueue,
   paths: Parameters<PreloadQueue['scheduleAll']>[0],
+  options?: Parameters<PreloadQueue['scheduleAll']>[3],
 ): Promise<PreloadProgress> {
   return new Promise((resolve) => {
-    queue.scheduleAll(paths, 0, (progress) => {
-      if (progress.completed >= progress.total) resolve(progress);
-    });
+    queue.scheduleAll(
+      paths,
+      0,
+      (progress) => {
+        if (progress.completed >= progress.total) resolve(progress);
+      },
+      options,
+    );
   });
+}
+
+async function waitFor(predicate: () => boolean): Promise<void> {
+  for (let i = 0; i < 20; i += 1) {
+    if (predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+  throw new Error('condition was not met');
 }
 
 function makeAnimatedWebpContainer(width: number, height: number, frameCount: number): Uint8Array {
