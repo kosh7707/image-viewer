@@ -4,10 +4,73 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { applyPortableRuntimePaths, resolvePortableLayout } from '../src/main/portable-runtime';
 
-test('portable package shows a splash bitmap during self-extraction', () => {
-  const config = fs.readFileSync('electron-builder.yml', 'utf8');
-  assert.match(config, /portable:\s*\n(?: {2}.+\n)* {2}splashImage: build\/portable-splash\.bmp/);
+function readPackageJson(): { scripts: Record<string, string> } {
+  return JSON.parse(fs.readFileSync('package.json', 'utf8')) as { scripts: Record<string, string> };
+}
 
+function readBuilderConfig(): string {
+  return fs.readFileSync('electron-builder.yml', 'utf8');
+}
+
+function escapedPattern(pattern: string): RegExp {
+  return new RegExp(pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+}
+
+test('dist script describes the future folder-portable pipeline', () => {
+  const pkg = readPackageJson();
+
+  assert.match(pkg.scripts.dist, /electron-builder --dir/);
+  assert.match(pkg.scripts.dist, /npm run portable:folder/);
+  assert.match(pkg.scripts['portable:folder'], /scripts\/make-portable-folder\.js/);
+  assert.match(pkg.scripts['portable:folder'], /release\/win-unpacked/);
+  assert.match(pkg.scripts['portable:folder'], /release/);
+  assert.doesNotMatch(
+    pkg.scripts['portable:folder'],
+    /electron-builder|npm run dist|npm run build/,
+  );
+});
+
+test('builder config targets folder-portable assembly instead of single-exe portable', () => {
+  const config = readBuilderConfig();
+
+  assert.doesNotMatch(config, /^\s*portable:\s*$/m);
+  assert.doesNotMatch(config, /target:\s*portable/);
+  assert.doesNotMatch(config, /portable-splash/);
+  assert.doesNotMatch(config, /^\s*fileAssociations:\s*$/m);
+});
+
+test('builder config keeps only the locales needed by the portable app', () => {
+  const config = readBuilderConfig();
+
+  assert.match(config, /^\s*electronLanguages:\s*$/m);
+  assert.match(config, /^\s*-\s*en-US\s*$/m);
+  assert.match(config, /^\s*-\s*ko\s*$/m);
+});
+
+test('builder config uses narrow payload trim rules', () => {
+  const config = readBuilderConfig();
+  const expectedExcludes = [
+    "'!dist/tests/**'",
+    "'!**/*.map'",
+    "'!**/*.ts'",
+    "'!node_modules/gifuct-js/demo/**'",
+  ];
+
+  for (const pattern of expectedExcludes) {
+    assert.match(config, escapedPattern(pattern));
+  }
+
+  assert.doesNotMatch(config, /!node_modules\/\*\*\/tests?/);
+  assert.doesNotMatch(config, /!node_modules\/\*\*\/docs?/);
+  assert.doesNotMatch(config, /!node_modules\/\*\*\/examples?/);
+});
+
+test('legacy single-exe portable splash asset is no longer part of builder config', () => {
+  const config = readBuilderConfig();
+  assert.doesNotMatch(config, /splashImage:\s*build\/portable-splash\.bmp/);
+
+  // Keep the asset for now so the branch stays reversible while the new
+  // folder-portable path stabilizes.
   const splash = fs.readFileSync('build/portable-splash.bmp');
   assert.equal(splash.subarray(0, 2).toString('ascii'), 'BM');
   assert.ok(splash.byteLength > 1000, 'splash bitmap should be a real BMP asset');

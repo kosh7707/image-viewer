@@ -1,6 +1,10 @@
 appId: com.example.imageviewer
 productName: ImageViewer
 copyright: Copyright (c) 2026
+asar: true
+electronLanguages:
+  - en-US
+  - ko
 directories:
   output: release
   buildResources: build
@@ -8,38 +12,10 @@ files:
   - dist/**/*
   - node_modules/**/*
   - package.json
+  - '!dist/tests/**'
   - '!**/*.map'
   - '!**/*.ts'
+  - '!node_modules/gifuct-js/demo/**'
 
 win:
-  target:
-    - target: portable
-      arch:
-        - x64
   artifactName: ImageViewer-${version}-${arch}.exe
-
-fileAssociations:
-  - ext: jpg
-    name: JPEG Image
-    description: JPEG image
-    role: Viewer
-  - ext: jpeg
-    name: JPEG Image
-    description: JPEG image
-    role: Viewer
-  - ext: png
-    name: PNG Image
-    description: PNG image
-    role: Viewer
-  - ext: webp
-    name: WebP Image
-    description: WebP image
-    role: Viewer
-  - ext: gif
-    name: GIF Image
-    description: GIF image
-    role: Viewer
-
-portable:
-  artifactName: ImageViewer-${version}-portable.exe
-  splashImage: build/portable-splash.bmp

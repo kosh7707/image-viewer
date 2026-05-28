@@ -6,6 +6,14 @@ const PORTABLE_DIR_NAME = 'ImageViewerPortable';
 const APP_RELATIVE = path.join('App', 'ImageViewer');
 const DATA_DIRS = ['userData', 'sessionData', 'logs'];
 const SENTINEL_FILE = '.imageviewer-portable-folder';
+const LAUNCHER_NAME = 'ImageViewerPortable.cmd';
+const PORTABLE_FOLDER_METADATA = {
+  portableDirName: PORTABLE_DIR_NAME,
+  appRelative: APP_RELATIVE,
+  dataDirs: DATA_DIRS,
+  launcherName: LAUNCHER_NAME,
+  sentinelFile: SENTINEL_FILE,
+};
 
 function resolveInside(base, ...parts) {
   return path.resolve(base, ...parts);
@@ -40,7 +48,7 @@ function writeReadme(portableRoot) {
     '',
     'To uninstall, delete the folder.',
     'This portable package creates no Add/Remove Programs entry.',
-    'File associations are not registered by default.',
+    'File associations are not registered by default; no registry integration is required.',
     'User data, session data, and logs live under Data/.',
     '',
   ].join('\n');
@@ -54,7 +62,7 @@ function writeCommandLauncher(portableRoot) {
     'start "" "%~dp0App\\ImageViewer\\ImageViewer.exe" %*',
     '',
   ].join('\r\n');
-  fs.writeFileSync(path.join(portableRoot, 'ImageViewerPortable.cmd'), content, 'utf8');
+  fs.writeFileSync(path.join(portableRoot, LAUNCHER_NAME), content, 'utf8');
 }
 
 function makePortableFolder(options) {
@@ -100,5 +108,6 @@ if (require.main === module) {
 }
 
 module.exports = {
+  PORTABLE_FOLDER_METADATA,
   makePortableFolder,
 };

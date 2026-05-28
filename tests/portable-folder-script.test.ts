@@ -6,6 +6,13 @@ import * as path from 'node:path';
 import { createRequire } from 'node:module';
 
 interface PortableFolderScript {
+  PORTABLE_FOLDER_METADATA: {
+    portableDirName: string;
+    appRelative: string;
+    dataDirs: string[];
+    launcherName: string;
+    sentinelFile: string;
+  };
   makePortableFolder(options: { sourceDir: string; outputDir: string }): {
     portableRoot: string;
     appRoot: string;
@@ -19,6 +26,18 @@ function loadScript(): PortableFolderScript {
     path.join(process.cwd(), 'scripts', 'make-portable-folder.js'),
   ) as PortableFolderScript;
 }
+
+test('portable folder script exports stable folder metadata', () => {
+  const { PORTABLE_FOLDER_METADATA } = loadScript();
+
+  assert.deepEqual(PORTABLE_FOLDER_METADATA, {
+    portableDirName: 'ImageViewerPortable',
+    appRelative: path.join('App', 'ImageViewer'),
+    dataDirs: ['userData', 'sessionData', 'logs'],
+    launcherName: 'ImageViewerPortable.cmd',
+    sentinelFile: '.imageviewer-portable-folder',
+  });
+});
 
 test('portable folder script assembles App and Data folders from an unpacked app source', () => {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'image-viewer-portable-folder-'));
@@ -52,6 +71,15 @@ test('portable folder script assembles App and Data folders from an unpacked app
     assert.match(readme, /delete (the )?folder/i);
     assert.match(readme, /no .*Add\/Remove Programs/i);
     assert.match(readme, /file associations are not registered/i);
+    assert.match(readme, /registry/i);
+
+    const launcher = fs.readFileSync(
+      path.join(result.portableRoot, 'ImageViewerPortable.cmd'),
+      'utf8',
+    );
+    assert.match(launcher, /IMAGEVIEWER_PORTABLE_ROOT/);
+    assert.match(launcher, /App\\ImageViewer\\ImageViewer\.exe/);
+    assert.match(launcher, /%\*/);
   } finally {
     fs.rmSync(temp, { recursive: true, force: true });
   }
