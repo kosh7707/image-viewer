@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   windows-build:
-    name: Build Windows portable .exe and publish Release
+    name: Build Windows folder-portable zip and publish Release
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -26,6 +26,23 @@ jobs:
       - name: Dependency audit
         run: npm audit --audit-level=high
 
+      - name: Lint
+        run: npm run lint
+
+      - name: Prettier check
+        run: npm run format:check
+
+      - name: Type-check
+        run: npx tsc --noEmit
+
+      - name: Test
+        run: npm test
+
+      - name: Electron renderer runtime smoke
+        env:
+          IMAGE_VIEWER_RUN_ELECTRON_SMOKE: '1'
+        run: node --test dist/tests/renderer-runtime-smoke.test.js
+
       - name: Verify tag matches package.json version
         shell: bash
         run: |
@@ -37,20 +54,36 @@ jobs:
           fi
           echo "version $PKG_VERSION matches tag $GITHUB_REF_NAME"
 
-      - name: Build
-        run: npm run build
-
-      - name: Electron renderer runtime smoke
-        env:
-          IMAGE_VIEWER_RUN_ELECTRON_SMOKE: '1'
-        run: node --test dist/tests/renderer-runtime-smoke.test.js
-
-      - name: Package (electron-builder portable .exe)
+      - name: Package folder portable
         run: npm run dist
+
+      - name: Audit portable folder
+        shell: pwsh
+        run: node scripts/audit-portable-folder.js release/ImageViewerPortable > release/portable-audit.json
+
+      - name: Zip portable folder and checksum
+        shell: pwsh
+        run: |
+          $version = node -p "require('./package.json').version"
+          $zip = "release/ImageViewerPortable-v$version-win-x64.zip"
+          if (Test-Path $zip) {
+            Remove-Item -LiteralPath $zip -Force
+          }
+          Compress-Archive -Path release/ImageViewerPortable -DestinationPath $zip -Force
+          $item = Get-Item -LiteralPath $zip
+          if ($item.Length -le 0) {
+            throw "Portable zip is empty: $zip"
+          }
+          $hash = Get-FileHash -LiteralPath $zip -Algorithm SHA256
+          "$($hash.Hash)  $($item.Name)" | Set-Content -Path release/SHA256SUMS.txt -Encoding ascii
+          Get-ChildItem release/ImageViewerPortable-v*-win-x64.zip, release/SHA256SUMS.txt, release/portable-audit.json
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: release/*.exe
+          files: |
+            release/ImageViewerPortable-v*-win-x64.zip
+            release/SHA256SUMS.txt
+            release/portable-audit.json
           generate_release_notes: true
           fail_on_unmatched_files: true

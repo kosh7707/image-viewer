@@ -43,3 +43,17 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      - name: Package folder portable
+        run: npm run dist
+
+      - name: Audit portable folder
+        run: npm run portable:audit
+
+      - name: Upload folder-portable artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ImageViewerPortable-ci
+          path: release/ImageViewerPortable
+          if-no-files-found: error
+          retention-days: 14
