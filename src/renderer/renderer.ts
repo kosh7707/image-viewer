@@ -14,8 +14,6 @@ import { GifHost } from './gif-host';
 import { installContextMenu, pushSpeed } from './menu-host';
 import { RssToast } from './toast';
 import { ProgressToast } from './progress-toast';
-import { SortDialog } from './sort-dialog';
-import { SettingsDialog } from './settings-dialog';
 import { mediaKindForEntry } from './media-kind';
 import { NativeImageHost } from './native-image-host';
 import { decodeAnimatedWebp } from './animated-webp-decoder';
@@ -74,33 +72,49 @@ const speedHud = new SpeedHud(toastHost);
 const positionHud = new PositionHud(toastHost);
 const preloadPanel = new PreloadPanel(dialogHost);
 
-const sortDialog = new SortDialog(dialogHost, {
-  onSortChange: (entries, newIdx) => {
-    album.reorder(entries, newIdx);
-    beginNavigation();
-    updatePreparedOrder();
-    showPositionHud();
-    refreshPreloadPanel({ reveal: true });
-    renderCurrentThenSchedule();
-  },
-  onJumpTo: (idx) => {
-    if (idx < 0 || idx >= album.size()) return;
-    album.state.currentIndex = idx;
-    beginNavigation();
-    updatePreparedOrder();
-    showPositionHud();
-    refreshPreloadPanel({ reveal: true });
-    renderCurrentThenSchedule();
-  },
-});
+type SortDialogInstance = InstanceType<typeof import('./sort-dialog').SortDialog>;
+type SettingsDialogInstance = InstanceType<typeof import('./settings-dialog').SettingsDialog>;
 
-const settingsDialog = new SettingsDialog(dialogHost, {
-  onSavePreloadLimit: async (bytes) => {
-    const prefs = normalizePreferences(await window.api.updateAnimatedPreloadMemoryLimit(bytes));
-    applyPreferences(prefs);
-    return prefs;
-  },
-});
+let sortDialog: SortDialogInstance | null = null;
+let settingsDialog: SettingsDialogInstance | null = null;
+
+async function getSortDialog(): Promise<SortDialogInstance> {
+  if (sortDialog) return sortDialog;
+  const { SortDialog } = await import('./sort-dialog');
+  sortDialog = new SortDialog(dialogHost, {
+    onSortChange: (entries, newIdx) => {
+      album.reorder(entries, newIdx);
+      beginNavigation();
+      updatePreparedOrder();
+      showPositionHud();
+      refreshPreloadPanel({ reveal: true });
+      renderCurrentThenSchedule();
+    },
+    onJumpTo: (idx) => {
+      if (idx < 0 || idx >= album.size()) return;
+      album.state.currentIndex = idx;
+      beginNavigation();
+      updatePreparedOrder();
+      showPositionHud();
+      refreshPreloadPanel({ reveal: true });
+      renderCurrentThenSchedule();
+    },
+  });
+  return sortDialog;
+}
+
+async function getSettingsDialog(): Promise<SettingsDialogInstance> {
+  if (settingsDialog) return settingsDialog;
+  const { SettingsDialog } = await import('./settings-dialog');
+  settingsDialog = new SettingsDialog(dialogHost, {
+    onSavePreloadLimit: async (bytes) => {
+      const prefs = normalizePreferences(await window.api.updateAnimatedPreloadMemoryLimit(bytes));
+      applyPreferences(prefs);
+      return prefs;
+    },
+  });
+  return settingsDialog;
+}
 
 installContextMenu(() => gifHost.speedMultiplier);
 
@@ -348,7 +362,7 @@ installKeyboard({
   onExit: () => {
     void window.api.quitApp();
   },
-  isExitBlocked: () => sortDialog.isOpen() || settingsDialog.isOpen(),
+  isExitBlocked: () => Boolean(sortDialog?.isOpen() || settingsDialog?.isOpen()),
 });
 
 window.api.onAlbumLoad((payload) => {
@@ -375,12 +389,11 @@ window.api.onAlbumProgress((payload) => {
 });
 
 window.api.onSortRequest(() => {
-  const current = album.current() ?? '';
-  sortDialog.open(album.entries(), current);
+  void openSortDialog();
 });
 
 window.api.onSettingsRequest(() => {
-  settingsDialog.open(currentPreferences);
+  void openSettingsDialog();
 });
 
 (window as unknown as { __viewer: unknown }).__viewer = {
@@ -393,9 +406,32 @@ window.api.onSettingsRequest(() => {
   animatedPreloader,
   positionHud,
   preloadPanel,
-  sortDialog,
-  settingsDialog,
+  get sortDialog() {
+    return sortDialog;
+  },
+  get settingsDialog() {
+    return settingsDialog;
+  },
 };
+
+async function openSortDialog(): Promise<void> {
+  try {
+    const dialog = await getSortDialog();
+    const current = album.current() ?? '';
+    dialog.open(album.entries(), current);
+  } catch (err) {
+    console.warn('[dialog] failed to open sort dialog:', err);
+  }
+}
+
+async function openSettingsDialog(): Promise<void> {
+  try {
+    const dialog = await getSettingsDialog();
+    dialog.open(currentPreferences);
+  } catch (err) {
+    console.warn('[dialog] failed to open settings dialog:', err);
+  }
+}
 
 function updatePreparedOrder(): void {
   const paths = album.entries().map((entry) => entry.path);

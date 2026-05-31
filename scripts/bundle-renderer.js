@@ -8,9 +8,11 @@
  * only the browser-loaded renderer entrypoints with self-contained bundles.
  */
 const path = require('node:path');
+const fs = require('node:fs');
 const esbuild = require('esbuild');
 
 const ROOT = path.resolve(__dirname, '..');
+const DIST_RENDERER = path.join(ROOT, 'dist', 'src', 'renderer');
 
 async function bundle() {
   const common = {
@@ -22,10 +24,20 @@ async function bundle() {
     logLevel: 'info',
   };
 
+  fs.rmSync(path.join(DIST_RENDERER, 'chunks'), { recursive: true, force: true });
+
   await esbuild.build({
-    ...common,
+    bundle: true,
+    platform: 'browser',
+    target: 'chrome124',
+    format: 'esm',
+    splitting: true,
+    sourcemap: true,
+    logLevel: 'info',
     entryPoints: [path.join(ROOT, 'src', 'renderer', 'renderer.ts')],
-    outfile: path.join(ROOT, 'dist', 'src', 'renderer', 'renderer.js'),
+    outdir: DIST_RENDERER,
+    entryNames: '[name]',
+    chunkNames: 'chunks/[name]-[hash]',
   });
 
   await esbuild.build({

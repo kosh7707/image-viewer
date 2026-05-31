@@ -24,10 +24,10 @@ class FakeElement {
 test('static boot overlay is present before renderer bundle execution', () => {
   const html = fs.readFileSync('src/renderer/index.html', 'utf8');
   const overlayAt = html.indexOf('id="boot-overlay"');
-  const scriptAt = html.indexOf('<script src="renderer.js"></script>');
+  const scriptAt = html.indexOf('<script type="module" src="renderer.js"></script>');
 
   assert.ok(overlayAt >= 0, 'index.html should contain boot overlay markup');
-  assert.ok(scriptAt >= 0, 'index.html should load renderer.js');
+  assert.ok(scriptAt >= 0, 'index.html should load renderer.js as an ES module');
   assert.ok(overlayAt < scriptAt, 'boot overlay must be in HTML before renderer.js runs');
 });
 
