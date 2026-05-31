@@ -93,23 +93,30 @@ test('main startup does not statically import folder extension constants', () =>
   assert.match(main, /READABLE_IMAGE_EXTS as readonly string\[\]/);
 });
 
-test('BrowserWindow creation is not blocked on preference loading', () => {
+test('BrowserWindow creation does not start eager preference loading', () => {
   const main = readSource('src/main/main.ts');
   const readyStart = main.indexOf('app.whenReady()');
   assert.notEqual(readyStart, -1, 'main.ts should wire app.whenReady');
 
   const readyBlock = main.slice(readyStart);
-  const createWindowAt = readyBlock.indexOf('createWindow();');
-  const loadPreferencesAt = readyBlock.indexOf('loadPreferences(');
 
-  assert.notEqual(createWindowAt, -1, 'ready handler should create the window');
-  assert.notEqual(loadPreferencesAt, -1, 'ready handler should still load preferences');
-  assert.ok(
-    createWindowAt < loadPreferencesAt,
-    'window creation must happen before preference loading starts',
-  );
-  assert.match(readyBlock, /preferences-loaded/);
-  assert.match(readyBlock, /preferences-load-failed/);
+  assert.match(readyBlock, /createWindow\(\);/);
+  assert.doesNotMatch(readyBlock, /loadPreferences\(/);
+  assert.doesNotMatch(readyBlock, /preferences-loaded/);
+  assert.doesNotMatch(readyBlock, /preferences-load-failed/);
+});
+
+test('preferences:get refreshes main-local animation speed on demand', () => {
+  const main = readSource('src/main/main.ts');
+  const handlerStart = main.indexOf("ipcMain.handle('preferences:get'");
+  assert.notEqual(handlerStart, -1, 'main.ts should handle preferences:get');
+  const handlerEnd = main.indexOf("ipcMain.handle('preload-limit:update'", handlerStart);
+  assert.notEqual(handlerEnd, -1, 'preferences:get handler should precede preload-limit handler');
+  const handler = main.slice(handlerStart, handlerEnd);
+
+  assert.match(handler, /const prefs\s*=\s*await loadPreferences\(\)/);
+  assert.match(handler, /animationSpeedMultiplier\s*=\s*prefs\.animation\.speedMultiplier/);
+  assert.match(handler, /return prefs/);
 });
 
 test('renderer-ready timing is sent from renderer IPC, not only DOM readiness', () => {

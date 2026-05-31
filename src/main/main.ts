@@ -257,7 +257,9 @@ ipcMain.handle('speed:update', async (_event, mult: number) => {
 });
 
 ipcMain.handle('preferences:get', async (): Promise<UserPreferences> => {
-  return await loadPreferences();
+  const prefs = await loadPreferences();
+  animationSpeedMultiplier = prefs.animation.speedMultiplier;
+  return prefs;
 });
 
 ipcMain.handle('preload-limit:update', async (_event, bytes: number): Promise<UserPreferences> => {
@@ -300,14 +302,6 @@ ipcMain.on('boot:renderer-ready', () => {
 app.whenReady().then(() => {
   logBootEvent('app-ready');
   createWindow();
-  void loadPreferences()
-    .then((prefs) => {
-      animationSpeedMultiplier = prefs.animation.speedMultiplier;
-      logBootEvent('preferences-loaded');
-    })
-    .catch(() => {
-      logBootEvent('preferences-load-failed');
-    });
 });
 
 app.on('window-all-closed', () => {
