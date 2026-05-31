@@ -127,6 +127,25 @@ test('startup import audit fails on a forbidden package import and reports the i
   }
 });
 
+test('startup import audit forbids preference modules by default', () => {
+  const result = auditTempGraph(
+    {
+      'src/main/main.ts': "import { loadPreferences } from './preferences';\nloadPreferences();\n",
+      'src/main/preferences.ts': 'export function loadPreferences() { return {}; }\n',
+    },
+    {
+      forbiddenLocalModules: undefined,
+      forbiddenPackages: [],
+    },
+  );
+  try {
+    assert.equal(result.status, 'fail');
+    assert.equal(result.violations[0]?.target.replaceAll('\\\\', '/'), 'src/main/preferences.ts');
+  } finally {
+    cleanupTemp(result);
+  }
+});
+
 test('startup import audit ignores dynamic imports, typeof imports, and type-only imports', () => {
   const result = auditTempGraph({
     'src/main/main.ts': [
@@ -186,6 +205,8 @@ test('startup import audit passes for the real main startup graph', () => {
   assert.ok(result.visited.includes('src/main/main.ts'));
   assert.ok(result.visited.includes('src/main/menu.ts'));
   assert.ok(!result.visited.includes('src/main/album-flow.ts'));
+  assert.ok(!result.visited.includes('src/main/preferences.ts'));
+  assert.ok(!result.visited.includes('src/shared/user-preferences.ts'));
 });
 
 test('startup import audit CLI emits deterministic JSON and exit codes', () => {

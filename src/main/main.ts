@@ -6,21 +6,13 @@ import { SUPPORTED_EXTS } from './folder';
 import { toggleFullscreen } from './window';
 import { configureMenuActions, showContextMenu, menuState } from './menu';
 import { startRssMonitor, stopRssMonitor } from './rss';
-import {
-  loadPreferences,
-  updateAnimatedPreloadMemoryLimit,
-  updateAnimationSpeed,
-} from './preferences';
-import {
-  normalizeAnimatedPreloadMemoryLimitBytes,
-  normalizeAnimationSpeed,
-  type UserPreferences,
-} from '../shared/user-preferences';
+import type { UserPreferences } from '../shared/user-preferences';
 import { applyPortableRuntimePaths, type PortableLayout } from './portable-runtime';
 import { createBootTimingLogger, type BootTimingLogger } from './boot-timing';
 
 let mainWindow: BrowserWindow | null = null;
 let albumFlowPromise: Promise<typeof import('./album-flow')> | null = null;
+let preferencesModulePromise: Promise<typeof import('./preferences')> | null = null;
 
 const processStartedAt = Date.now();
 const portableLayout = applyPortableRuntimePaths({
@@ -36,6 +28,16 @@ logBootEvent('main-start');
 
 function userDataDir(): string {
   return app.getPath('userData');
+}
+
+function loadPreferencesModule(): Promise<typeof import('./preferences')> {
+  preferencesModulePromise ??= import('./preferences');
+  return preferencesModulePromise;
+}
+
+async function loadPreferences(): Promise<UserPreferences> {
+  const preferences = await loadPreferencesModule();
+  return await preferences.loadPreferences(userDataDir());
 }
 
 function createOptionalBootLogger(layout: PortableLayout | null): BootTimingLogger | null {
@@ -172,21 +174,19 @@ ipcMain.handle('menu:show', (event, point?: { x: number; y: number }) => {
 
 ipcMain.handle('speed:update', async (_event, mult: number) => {
   if (typeof mult === 'number' && Number.isFinite(mult)) {
-    const speed = normalizeAnimationSpeed(mult);
-    menuState.speedMultiplier = speed;
-    await updateAnimationSpeed(userDataDir(), speed);
+    const preferences = await loadPreferencesModule();
+    const saved = await preferences.updateAnimationSpeed(userDataDir(), mult);
+    menuState.speedMultiplier = saved.animation.speedMultiplier;
   }
 });
 
 ipcMain.handle('preferences:get', async (): Promise<UserPreferences> => {
-  return await loadPreferences(userDataDir());
+  return await loadPreferences();
 });
 
 ipcMain.handle('preload-limit:update', async (_event, bytes: number): Promise<UserPreferences> => {
-  return await updateAnimatedPreloadMemoryLimit(
-    userDataDir(),
-    normalizeAnimatedPreloadMemoryLimitBytes(bytes),
-  );
+  const preferences = await loadPreferencesModule();
+  return await preferences.updateAnimatedPreloadMemoryLimit(userDataDir(), bytes);
 });
 
 ipcMain.handle('fs:readFile', async (_event, filePath: string) => {
@@ -235,7 +235,7 @@ configureMenuActions({
 app.whenReady().then(() => {
   logBootEvent('app-ready');
   createWindow();
-  void loadPreferences(userDataDir())
+  void loadPreferences()
     .then((prefs) => {
       menuState.speedMultiplier = prefs.animation.speedMultiplier;
       logBootEvent('preferences-loaded');

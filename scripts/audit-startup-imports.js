@@ -9,6 +9,8 @@ const DEFAULT_FORBIDDEN_LOCAL_MODULES = [
   'src/main/measure.ts',
   'src/main/album-loader.ts',
   'src/main/walk.ts',
+  'src/main/preferences.ts',
+  'src/shared/user-preferences.ts',
 ];
 const DEFAULT_FORBIDDEN_PACKAGES = ['gifuct-js', 'image-size'];
 

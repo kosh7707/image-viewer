@@ -1,9 +1,28 @@
 import { test } from 'node:test';
 import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
+import * as ts from 'typescript';
 
 function readSource(file: string): string {
   return fs.readFileSync(file, 'utf8');
+}
+
+function runtimeStaticImportSpecifiers(file: string): string[] {
+  const sourceFile = ts.createSourceFile(
+    file,
+    readSource(file),
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TS,
+  );
+  const specifiers: string[] = [];
+  for (const statement of sourceFile.statements) {
+    if (!ts.isImportDeclaration(statement)) continue;
+    if (statement.importClause?.isTypeOnly) continue;
+    const specifier = statement.moduleSpecifier;
+    if (ts.isStringLiteralLike(specifier)) specifiers.push(specifier.text);
+  }
+  return specifiers;
 }
 
 test('main startup does not statically import the album loading stack', () => {
@@ -12,6 +31,13 @@ test('main startup does not statically import the album loading stack', () => {
 
   assert.doesNotMatch(main, /from ['"]\.\/album-flow['"]/);
   assert.doesNotMatch(menu, /from ['"]\.\/album-flow['"]/);
+});
+
+test('main startup does not statically import preference storage or normalization', () => {
+  const imports = runtimeStaticImportSpecifiers('src/main/main.ts');
+
+  assert.ok(!imports.includes('./preferences'));
+  assert.ok(!imports.includes('../shared/user-preferences'));
 });
 
 test('BrowserWindow creation is not blocked on preference loading', () => {
@@ -29,6 +55,8 @@ test('BrowserWindow creation is not blocked on preference loading', () => {
     createWindowAt < loadPreferencesAt,
     'window creation must happen before preference loading starts',
   );
+  assert.match(readyBlock, /preferences-loaded/);
+  assert.match(readyBlock, /preferences-load-failed/);
 });
 
 test('renderer-ready timing is sent from renderer IPC, not only DOM readiness', () => {
