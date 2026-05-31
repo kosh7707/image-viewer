@@ -223,6 +223,26 @@ test('startup import audit forbids folder extension constants by default', () =>
   }
 });
 
+test('startup import audit forbids boot timing diagnostics by default', () => {
+  const result = auditTempGraph(
+    {
+      'src/main/main.ts':
+        "import { createBootTimingLogger } from './boot-timing';\nvoid createBootTimingLogger;\n",
+      'src/main/boot-timing.ts': 'export function createBootTimingLogger() { return null; }\n',
+    },
+    {
+      forbiddenLocalModules: undefined,
+      forbiddenPackages: [],
+    },
+  );
+  try {
+    assert.equal(result.status, 'fail');
+    assert.equal(result.violations[0]?.target.replaceAll('\\\\', '/'), 'src/main/boot-timing.ts');
+  } finally {
+    cleanupTemp(result);
+  }
+});
+
 test('startup import audit ignores dynamic imports, typeof imports, and type-only imports', () => {
   const result = auditTempGraph({
     'src/main/main.ts': [
@@ -287,6 +307,7 @@ test('startup import audit passes for the real main startup graph', () => {
   assert.ok(!result.visited.includes('src/main/menu.ts'));
   assert.ok(!result.visited.includes('src/main/window.ts'));
   assert.ok(!result.visited.includes('src/main/folder.ts'));
+  assert.ok(!result.visited.includes('src/main/boot-timing.ts'));
 });
 
 test('startup import audit CLI emits deterministic JSON and exit codes', () => {

@@ -93,6 +93,25 @@ test('main startup does not statically import folder extension constants', () =>
   assert.match(main, /READABLE_IMAGE_EXTS as readonly string\[\]/);
 });
 
+test('main startup does not statically import boot timing diagnostics', () => {
+  const imports = runtimeStaticImportSpecifiers('src/main/main.ts');
+  const main = readSource('src/main/main.ts');
+  const loggerStateAt = main.indexOf('let bootLoggerPromise');
+  const firstBootLogAt = main.indexOf("logBootEvent('main-start')");
+
+  assert.ok(!imports.includes('./boot-timing'));
+  assert.match(main, /IMAGEVIEWER_BOOT_LOG_DIR/);
+  assert.match(main, /import\(['"]\.\/boot-timing['"]\)/);
+  assert.doesNotMatch(main, /layout\?\.logsDir/);
+  assert.ok(loggerStateAt >= 0, 'boot logger state should exist');
+  assert.ok(firstBootLogAt >= 0, 'main-start boot event should exist');
+  assert.ok(loggerStateAt < firstBootLogAt, 'boot logger state must initialize before first log');
+  assert.match(
+    main,
+    /function logBootEvent[\s\S]*try\s*{[\s\S]*loadBootLogger\(\)[\s\S]*catch\s*{/,
+  );
+});
+
 test('BrowserWindow creation does not start eager preference loading', () => {
   const main = readSource('src/main/main.ts');
   const readyStart = main.indexOf('app.whenReady()');

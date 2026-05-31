@@ -3,8 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { pathToFileURL } from 'url';
 import type { UserPreferences } from '../shared/user-preferences';
-import { applyPortableRuntimePaths, type PortableLayout } from './portable-runtime';
-import { createBootTimingLogger, type BootTimingLogger } from './boot-timing';
+import { applyPortableRuntimePaths } from './portable-runtime';
 
 let mainWindow: BrowserWindow | null = null;
 let albumFlowPromise: Promise<typeof import('./album-flow')> | null = null;
@@ -15,13 +14,51 @@ let windowModulePromise: Promise<typeof import('./window')> | null = null;
 let animationSpeedMultiplier = 1.0;
 
 const processStartedAt = Date.now();
-const portableLayout = applyPortableRuntimePaths({
+applyPortableRuntimePaths({
   env: process.env,
   execPath: process.execPath,
   setPath: (name, value) => app.setPath(name, value),
   setAppLogsPath: (value) => app.setAppLogsPath(value),
 });
-const bootLogger = createOptionalBootLogger(portableLayout);
+
+interface BootTimingLogger {
+  log(event: string, data?: Record<string, unknown>): void;
+}
+
+let bootLoggerPromise: Promise<BootTimingLogger | null> | null = null;
+
+function loadBootLogger(): Promise<BootTimingLogger | null> {
+  bootLoggerPromise ??= (async () => {
+    const logsDir = process.env.IMAGEVIEWER_BOOT_LOG_DIR?.trim();
+    if (!logsDir) return null;
+    try {
+      const { createBootTimingLogger } = await import('./boot-timing');
+      return createBootTimingLogger(logsDir);
+    } catch {
+      return null;
+    }
+  })();
+  return bootLoggerPromise;
+}
+
+function logBootEvent(event: string): void {
+  const elapsedMs = Date.now() - processStartedAt;
+  try {
+    void loadBootLogger()
+      .then((logger) => {
+        try {
+          logger?.log(event, { elapsedMs });
+        } catch {
+          // Boot timing must never prevent the viewer from opening.
+        }
+      })
+      .catch(() => {
+        // Optional boot timing imports must never prevent the viewer from opening.
+      });
+  } catch {
+    // Optional boot timing setup must never prevent the viewer from opening.
+  }
+}
 
 Menu.setApplicationMenu(null);
 logBootEvent('main-start');
@@ -112,19 +149,6 @@ async function showContextMenuForWindow(
     });
   } catch {
     // Context menus are optional and must not make menu:show reject.
-  }
-}
-
-function createOptionalBootLogger(layout: PortableLayout | null): BootTimingLogger | null {
-  const logsDir = process.env.IMAGEVIEWER_BOOT_LOG_DIR?.trim() || layout?.logsDir;
-  return logsDir ? createBootTimingLogger(logsDir) : null;
-}
-
-function logBootEvent(event: string): void {
-  try {
-    bootLogger?.log(event, { elapsedMs: Date.now() - processStartedAt });
-  } catch {
-    // Boot timing must never prevent the viewer from opening.
   }
 }
 
