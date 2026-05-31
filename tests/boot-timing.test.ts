@@ -34,3 +34,31 @@ test('boot timing logger writes bounded JSONL records under the supplied logs di
     fs.rmSync(temp, { recursive: true, force: true });
   }
 });
+
+test('boot timing logger stamps every record from one process with a stable runId', () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'image-viewer-boot-timing-'));
+  try {
+    const logger = createBootTimingLogger(temp, {
+      fileName: 'boot-times.jsonl',
+      maxRecords: 10,
+      now: () => '2026-05-29T00:00:00.000Z',
+      runId: 'test-run',
+    });
+
+    logger.log('main-start');
+    logger.log('renderer-ready');
+
+    const records = fs
+      .readFileSync(path.join(temp, 'boot-times.jsonl'), 'utf8')
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line) as { runId?: string });
+
+    assert.deepEqual(
+      records.map((r) => r.runId),
+      ['test-run', 'test-run'],
+    );
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+});
