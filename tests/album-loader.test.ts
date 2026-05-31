@@ -1,184 +1,73 @@
 import { test } from 'node:test';
 import * as assert from 'node:assert/strict';
-import { loadAlbum, DEFAULT_SOFT_CAP_BYTES } from '../src/main/album-loader';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { loadAlbum } from '../src/main/album-loader';
 import type { WalkEntry } from '../src/main/walk';
-import type { ImageEstimate } from '../src/main/measure';
 
 function fakeWalk(entries: WalkEntry[]) {
   return (_root: string): WalkEntry[] => entries;
 }
 
-function fakeMeasure(byPath: Record<string, ImageEstimate>) {
-  return async (filePath: string): Promise<ImageEstimate> => {
-    const r = byPath[filePath];
-    if (!r) throw new Error(`no measure for ${filePath}`);
-    return r;
-  };
+function sourceText(relativePath: string): string {
+  return fs.readFileSync(path.join(process.cwd(), relativePath), 'utf8');
 }
 
-function estimate(bytes: number, overrides: Partial<ImageEstimate> = {}): ImageEstimate {
-  return {
-    width: 100,
-    height: 100,
-    frameCount: 1,
-    bytes,
-    encodedBytes: 1_000,
-    preloadBytes: bytes,
-    playbackBytes: bytes,
-    ...overrides,
-  };
-}
-
-const SMALL: ImageEstimate = estimate(40_000);
-
-test('loadAlbum: empty folder returns empty status', async () => {
+test('loadAlbum: empty folder returns empty status without a pre-measure pass', async () => {
   const r = await loadAlbum('/p', {
     walk: fakeWalk([]),
-    measureFile: async () => SMALL,
-    confirmOverCap: async () => true,
   });
+
   assert.equal(r.status, 'empty');
   assert.deepEqual(r.entries, []);
-  assert.equal(r.totalBytes, 0);
 });
 
-test('loadAlbum: under cap returns ok with summed preload bytes, no confirm called', async () => {
-  let confirmCalled = false;
+test('loadAlbum: non-empty folder returns walked entries without measuring or confirming', async () => {
   const entries: WalkEntry[] = [
     { path: '/p/a.png', mtimeMs: 1 },
-    { path: '/p/b.jpg', mtimeMs: 2 },
+    { path: '/p/b.gif', mtimeMs: 2 },
+    { path: '/p/c.webp', mtimeMs: 3 },
   ];
+
   const r = await loadAlbum('/p', {
     walk: fakeWalk(entries),
-    measureFile: fakeMeasure({ '/p/a.png': SMALL, '/p/b.jpg': SMALL }),
-    confirmOverCap: async () => {
-      confirmCalled = true;
-      return true;
-    },
-  });
-  assert.equal(r.status, 'ok');
-  assert.equal(r.entries.length, 2);
-  assert.deepEqual(
-    r.entries.map((e) => e.estimate),
-    [SMALL, SMALL],
-  );
-  assert.equal(r.totalBytes, 80_000);
-  assert.equal(confirmCalled, false, 'confirm must not fire below cap');
-});
-
-test('loadAlbum: over cap with confirm yes returns ok', async () => {
-  const huge: ImageEstimate = estimate(DEFAULT_SOFT_CAP_BYTES + 1_000_000);
-  const entries: WalkEntry[] = [{ path: '/p/huge.jpg', mtimeMs: 1 }];
-  const r = await loadAlbum('/p', {
-    walk: fakeWalk(entries),
-    measureFile: fakeMeasure({ '/p/huge.jpg': huge }),
-    confirmOverCap: async () => true,
-  });
-  assert.equal(r.status, 'ok');
-  assert.equal(r.entries.length, 1);
-  assert.ok(r.totalBytes > DEFAULT_SOFT_CAP_BYTES);
-});
-
-test('loadAlbum: over cap with confirm no returns cancelled', async () => {
-  const huge: ImageEstimate = estimate(DEFAULT_SOFT_CAP_BYTES + 1_000_000);
-  const entries: WalkEntry[] = [{ path: '/p/huge.jpg', mtimeMs: 1 }];
-  const r = await loadAlbum('/p', {
-    walk: fakeWalk(entries),
-    measureFile: fakeMeasure({ '/p/huge.jpg': huge }),
-    confirmOverCap: async () => false,
-  });
-  assert.equal(r.status, 'cancelled');
-});
-
-test('loadAlbum: confirm receives total bytes and file count', async () => {
-  let receivedBytes = -1;
-  let receivedCount = -1;
-  const big: ImageEstimate = estimate(DEFAULT_SOFT_CAP_BYTES + 100);
-  const entries: WalkEntry[] = [
-    { path: '/p/a.jpg', mtimeMs: 1 },
-    { path: '/p/b.jpg', mtimeMs: 2 },
-  ];
-  await loadAlbum('/p', {
-    walk: fakeWalk(entries),
-    measureFile: fakeMeasure({ '/p/a.jpg': big, '/p/b.jpg': SMALL }),
-    confirmOverCap: async (totalBytes, fileCount) => {
-      receivedBytes = totalBytes;
-      receivedCount = fileCount;
-      return true;
-    },
-  });
-  assert.equal(receivedBytes, big.preloadBytes + SMALL.preloadBytes);
-  assert.equal(receivedCount, 2);
-});
-
-test('loadAlbum: animated all-frame estimate does not inflate static preload cap', async () => {
-  let confirmCalled = false;
-  const animated: ImageEstimate = estimate(DEFAULT_SOFT_CAP_BYTES * 10, {
-    frameCount: 10_000,
-    preloadBytes: 0,
-    playbackBytes: 80_000,
-  });
-  const r = await loadAlbum('/p', {
-    walk: fakeWalk([{ path: '/p/animated.webp', mtimeMs: 1 }]),
-    measureFile: fakeMeasure({ '/p/animated.webp': animated }),
-    confirmOverCap: async () => {
-      confirmCalled = true;
-      return true;
-    },
   });
 
   assert.equal(r.status, 'ok');
-  assert.equal(r.totalBytes, 0);
-  assert.equal(confirmCalled, false, 'all-frame animated cost is not static preload memory');
+  assert.deepEqual(r.entries, entries);
 });
 
-test('loadAlbum: emits per-file progress during measure phase', async () => {
-  const events: Array<{ phase: string; completed: number; total: number; bytesSoFar: number }> = [];
-  const entries: WalkEntry[] = [
-    { path: '/p/a.jpg', mtimeMs: 1 },
-    { path: '/p/b.jpg', mtimeMs: 2 },
-    { path: '/p/c.jpg', mtimeMs: 3 },
-  ];
-  await loadAlbum('/p', {
-    walk: fakeWalk(entries),
-    measureFile: fakeMeasure({
-      '/p/a.jpg': SMALL,
-      '/p/b.jpg': SMALL,
-      '/p/c.jpg': SMALL,
-    }),
-    confirmOverCap: async () => true,
-    onProgress: (phase, completed, total, bytesSoFar) =>
-      events.push({ phase, completed, total, bytesSoFar }),
-  });
-  assert.equal(events.length, 3);
-  assert.deepEqual(
-    events.map((e) => e.completed),
-    [1, 2, 3],
-  );
-  assert.equal(events[0]!.total, 3);
-  assert.equal(events[2]!.bytesSoFar, SMALL.preloadBytes * 3);
-});
-
-test('loadAlbum: per-file measure failure is skipped, others succeed', async () => {
+test('loadAlbum: metadata-less entries stay in the album for renderer-side preload/decode', async () => {
   const entries: WalkEntry[] = [
     { path: '/p/good.jpg', mtimeMs: 1 },
-    { path: '/p/bad.jpg', mtimeMs: 2 },
+    { path: '/p/header-would-have-failed.gif', mtimeMs: 2 },
     { path: '/p/also-good.png', mtimeMs: 3 },
   ];
+
   const r = await loadAlbum('/p', {
     walk: fakeWalk(entries),
-    measureFile: async (p) => {
-      if (p === '/p/bad.jpg') throw new Error('decoder boom');
-      return SMALL;
-    },
-    confirmOverCap: async () => true,
   });
+
   assert.equal(r.status, 'ok');
-  assert.equal(r.entries.length, 2, 'bad file dropped from album');
-  assert.deepEqual(r.entries.map((e) => e.path).sort(), ['/p/also-good.png', '/p/good.jpg']);
-  assert.equal(r.totalBytes, SMALL.preloadBytes * 2);
+  assert.deepEqual(
+    r.entries.map((entry) => entry.path),
+    ['/p/good.jpg', '/p/header-would-have-failed.gif', '/p/also-good.png'],
+  );
 });
 
-test('loadAlbum: DEFAULT_SOFT_CAP_BYTES is 4 GiB', () => {
-  assert.equal(DEFAULT_SOFT_CAP_BYTES, 4 * 1024 * 1024 * 1024);
+test('loadAlbum source has no whole-folder measurement, soft cap, or cancel branch', () => {
+  const src = sourceText('src/main/album-loader.ts');
+  for (const forbidden of [
+    'DEFAULT_SOFT_CAP_BYTES',
+    'ImageEstimate',
+    'MeasuredWalkEntry',
+    'measureFile',
+    'confirmOverCap',
+    'softCapBytes',
+    'totalBytes',
+    'measuring',
+    'cancelled',
+  ]) {
+    assert.equal(src.includes(forbidden), false, `${forbidden} must not be in album-loader`);
+  }
 });

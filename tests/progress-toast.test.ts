@@ -1,5 +1,7 @@
 import { test } from 'node:test';
 import * as assert from 'node:assert/strict';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { ProgressToast } from '../src/renderer/progress-toast';
 
 interface RuntimeGlobals {
@@ -39,13 +41,20 @@ test('ProgressToast hides instead of sticking on an empty preload phase', () => 
     const host = new FakeElement();
     const toast = new ProgressToast(host as unknown as HTMLElement);
 
-    toast.update({ phase: 'measuring', completed: 1, total: 2 });
+    toast.update({ phase: 'preloading', completed: 1, total: 2 });
     assert.equal(host.children.length, 1);
 
     toast.update({ phase: 'preloading', completed: 0, total: 0 });
     assert.equal(host.children.length, 0);
   } finally {
     globals.document = oldDocument;
+  }
+});
+
+test('Album progress API and toast no longer expose a main-process measure phase', () => {
+  for (const relativePath of ['src/preload/api.ts', 'src/renderer/progress-toast.ts']) {
+    const src = fs.readFileSync(path.join(process.cwd(), relativePath), 'utf8');
+    assert.equal(src.includes('measuring'), false, `${relativePath} must not expose measuring`);
   }
 });
 

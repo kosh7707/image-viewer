@@ -34,7 +34,7 @@ export interface RssUpdatePayload {
   bytes: number;
 }
 
-export type AlbumProgressPhase = 'scanning' | 'measuring' | 'preloading';
+export type AlbumProgressPhase = 'scanning' | 'preloading';
 
 export interface AlbumProgressPayload {
   phase: AlbumProgressPhase;
@@ -70,7 +70,7 @@ export interface ImageViewerApi {
   onAlbumLoad(cb: (payload: AlbumLoadPayload) => void): () => void;
   /** Subscribe to rss:update events. */
   onRssUpdate(cb: (payload: RssUpdatePayload) => void): () => void;
-  /** Subscribe to album:progress events (measure/preload phases). */
+  /** Subscribe to album:progress events (discovery/preload phases). */
   onAlbumProgress(cb: (payload: AlbumProgressPayload) => void): () => void;
   /** Subscribe to menu:sort-request events (user clicked Sort... in menu). */
   onSortRequest(cb: () => void): () => void;

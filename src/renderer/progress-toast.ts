@@ -1,10 +1,9 @@
 /**
  * progress-toast.ts — single sticky toast that reports album-load progress.
  *
- * Phases: 'scanning' (file discovery before exact totals are known),
- * 'measuring' (header parsing in main process), and 'preloading' (image
- * decoding in renderer). The toast updates its text in place and auto-dismisses
- * when the final phase completes.
+ * Phases: 'scanning' (file discovery before exact totals are known) and
+ * 'preloading' (image decoding in renderer). The toast updates its text in
+ * place and auto-dismisses when the final phase completes.
  */
 
 import type { AlbumProgressPhase } from '../preload/api';
@@ -18,7 +17,6 @@ export interface ProgressUpdate {
 
 const PHASE_LABEL: Record<ProgressUpdate['phase'], string> = {
   scanning: '파일 찾는 중',
-  measuring: '측정 중',
   preloading: '로딩 중',
 };
 

@@ -4,7 +4,8 @@ export interface PreloadBudgetCandidate {
   path: string;
   index: number;
   kind: PreloadBudgetKind;
-  bytes: number;
+  /** Null means the decoded size is unknown until renderer-side preload. */
+  bytes: number | null;
 }
 
 export interface PreloadBudgetPlan {
@@ -31,22 +32,36 @@ export function planPreloadBudgetCandidates({
   };
 
   let plannedBytes = 0;
+  let hasUnknownStatic = false;
+  const unknownStaticBytes = unknownStaticPlanningBytes(totalLimit);
   for (const candidate of candidates
-    .filter((candidate) => Number.isFinite(candidate.bytes) && candidate.bytes > 0)
+    .filter((candidate) => {
+      return candidate.bytes === null || (Number.isFinite(candidate.bytes) && candidate.bytes > 0);
+    })
     .sort(
       (a, b) =>
         wrapDistance(a.index, currentIndex, totalEntries) -
           wrapDistance(b.index, currentIndex, totalEntries) || a.index - b.index,
     )) {
-    if (candidate.bytes > totalLimit) continue;
-    if (plannedBytes + candidate.bytes > totalLimit) continue;
-    plannedBytes += candidate.bytes;
+    const planningBytes =
+      candidate.bytes ?? (candidate.kind === 'static' ? unknownStaticBytes : totalLimit);
+    if (planningBytes > totalLimit) continue;
+    if (plannedBytes + planningBytes > totalLimit) continue;
+    plannedBytes += planningBytes;
     plan.allowedPaths.add(candidate.path);
     if (candidate.kind === 'static') {
-      plan.staticBytes += candidate.bytes;
+      if (candidate.bytes === null) {
+        hasUnknownStatic = true;
+      } else {
+        plan.staticBytes += candidate.bytes;
+      }
     } else {
-      plan.animatedBytes += candidate.bytes;
+      plan.animatedBytes += planningBytes;
     }
+  }
+
+  if (hasUnknownStatic) {
+    plan.staticBytes = Math.max(plan.staticBytes, totalLimit - plan.animatedBytes);
   }
 
   return plan;
@@ -56,4 +71,9 @@ export function wrapDistance(index: number, currentIndex: number, total: number)
   if (total <= 0) return 0;
   const delta = Math.abs(index - currentIndex);
   return Math.min(delta, total - delta);
+}
+
+function unknownStaticPlanningBytes(totalLimit: number): number {
+  if (!Number.isFinite(totalLimit) || totalLimit <= 0) return 1;
+  return Math.max(1, Math.ceil(totalLimit / 64));
 }

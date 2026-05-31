@@ -81,6 +81,34 @@ test('PreloadQueue scheduleAll preloads measured static WebP entries into the ca
   });
 });
 
+test('PreloadQueue preloads path-only static images and leaves unknown animations off bitmap cache', async () => {
+  await withRendererRuntime(
+    {
+      '/p/a.png': new Uint8Array([1, 2, 3]),
+      '/p/b.jpg': new Uint8Array([4, 5, 6]),
+    },
+    async (calls) => {
+      const governor = new CacheGovernor();
+      const queue = new PreloadQueue(governor);
+
+      const final = await waitForPreload(queue, [
+        { path: '/p/a.png', mtimeMs: 1 },
+        { path: '/p/unknown.webp', mtimeMs: 2 },
+        { path: '/p/motion.gif', mtimeMs: 3 },
+        { path: '/p/b.jpg', mtimeMs: 4 },
+      ]);
+
+      assert.deepEqual(calls.reads, ['/p/a.png', '/p/b.jpg']);
+      assert.equal(final.total, 2);
+      assert.equal(final.completed, 2);
+      assert.equal(governor.has('/p/a.png'), true);
+      assert.equal(governor.has('/p/b.jpg'), true);
+      assert.equal(governor.has('/p/unknown.webp'), false);
+      assert.equal(governor.has('/p/motion.gif'), false);
+    },
+  );
+});
+
 test('PreloadQueue refuses animated WebP bytes before createImageBitmap can collapse animation', async () => {
   await withRendererRuntime(
     { '/p/animated.webp': makeAnimatedWebpContainer(3, 2, 2) },

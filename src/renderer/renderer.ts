@@ -474,8 +474,8 @@ function planPreloadBudget(): PreloadBudgetPlan {
         path: string;
         index: number;
         kind: PreloadBudgetKind;
-        bytes: number;
-      } => item.kind !== null && item.bytes !== null,
+        bytes: number | null;
+      } => item.kind !== null && (item.bytes === null || isFinitePositive(item.bytes)),
     );
   return planPreloadBudgetCandidates({
     candidates,
@@ -496,7 +496,8 @@ function estimatePreloadEntryBytes(entry: AlbumEntryDTO, limitBytes: number): nu
   if (preloadBudgetKind(entry) === 'static') {
     if (isFinitePositive(entry.estimatedBytes)) return Math.ceil(entry.estimatedBytes);
     if (entry.width && entry.height) return entry.width * entry.height * 4;
-    return Math.max(1, entry.encodedBytes ?? 1);
+    if (isFinitePositive(entry.encodedBytes)) return Math.ceil(entry.encodedBytes);
+    return null;
   }
   return estimatePreparedMediaBytesForLimit(entry, limitBytes);
 }
