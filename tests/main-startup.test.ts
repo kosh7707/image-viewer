@@ -69,6 +69,18 @@ test('main startup does not statically import the context menu implementation', 
   assert.match(main, /openFolder:\s*async\s*\(\)\s*=>/);
 });
 
+test('main startup does not statically import Windows shell integration', () => {
+  const imports = runtimeStaticImportSpecifiers('src/main/main.ts');
+  const main = readSource('src/main/main.ts');
+
+  assert.ok(!imports.includes('./shell-integration'));
+  assert.match(main, /let shellIntegrationModulePromise/);
+  assert.match(main, /import\(['"]\.\/shell-integration['"]\)/);
+  assert.match(main, /ipcMain\.handle\(['"]shell-integration:status['"]/);
+  assert.match(main, /ipcMain\.handle\(['"]shell-integration:register['"]/);
+  assert.match(main, /ipcMain\.handle\(['"]shell-integration:unregister['"]/);
+});
+
 test('main startup does not statically import the fullscreen window helper', () => {
   const imports = runtimeStaticImportSpecifiers('src/main/main.ts');
   const main = readSource('src/main/main.ts');

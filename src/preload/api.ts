@@ -43,6 +43,24 @@ export interface AlbumProgressPayload {
   bytesSoFar: number;
 }
 
+export type ShellIntegrationState = 'registered' | 'not-registered' | 'partial' | 'unavailable';
+
+export interface ShellIntegrationTargetStatus {
+  id: string;
+  kind: 'extension' | 'folder';
+  registered: boolean;
+  present?: boolean;
+  actualCommand?: string;
+}
+
+export interface ShellIntegrationStatus {
+  available: boolean;
+  state: ShellIntegrationState;
+  expectedCommand: string;
+  targets: ShellIntegrationTargetStatus[];
+  message?: string;
+}
+
 export interface ImageViewerApi {
   /** Toggle fullscreen via main process. Returns new fullscreen state. */
   toggleFullscreen(): Promise<boolean>;
@@ -54,6 +72,12 @@ export interface ImageViewerApi {
   getPreferences(): Promise<UserPreferences>;
   /** Persist the all-image preload memory limit. */
   updateAnimatedPreloadMemoryLimit(bytes: number): Promise<UserPreferences>;
+  /** Read Windows per-user context-menu integration status. */
+  getShellIntegrationStatus(): Promise<ShellIntegrationStatus>;
+  /** Register "Open with ImageViewer" for supported image extensions and folders. */
+  registerShellIntegration(): Promise<ShellIntegrationStatus>;
+  /** Remove ImageViewer Windows context-menu integration. */
+  unregisterShellIntegration(): Promise<ShellIntegrationStatus>;
   /** Read an image file as bytes (validated by main). */
   readFile(filePath: string): Promise<Uint8Array>;
   /** Return a validated file:// URL for native browser image playback. */

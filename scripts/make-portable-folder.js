@@ -49,6 +49,8 @@ function writeReadme(portableRoot) {
     'To uninstall, delete the folder.',
     'This portable package creates no Add/Remove Programs entry.',
     'File associations are not registered by default; no registry integration is required.',
+    'Optional Windows integration can add an ImageViewer right-click menu for supported images and folders.',
+    'If you enable Windows integration in Settings, use Settings > Windows integration > Remove before deleting or moving this folder.',
     'User data, session data, and logs live under Data/.',
     '',
   ].join('\n');

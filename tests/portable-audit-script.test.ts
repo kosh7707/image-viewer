@@ -142,6 +142,20 @@ test('portable audit requires README to say registry integration is unnecessary'
   }
 });
 
+test('portable README explains optional Windows integration can be removed', () => {
+  const { temp, portableRoot } = createPortableFixture();
+  try {
+    const readme = fs.readFileSync(path.join(portableRoot, 'README-PORTABLE.txt'), 'utf8');
+
+    assert.match(readme, /Windows integration/i);
+    assert.match(readme, /Settings/i);
+    assert.match(readme, /Remove/i);
+    assert.match(readme, /before (deleting|moving)/i);
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+});
+
 test('portable audit summarizes boot logs by latest valid runId and counts malformed lines', () => {
   const { temp, portableRoot } = createPortableFixture();
   try {

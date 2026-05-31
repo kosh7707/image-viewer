@@ -1,3 +1,4 @@
+import type { ShellIntegrationStatus } from '../preload/api';
 import type { UserPreferences } from '../shared/user-preferences';
 import {
   DEFAULT_ANIMATED_PRELOAD_MEMORY_LIMIT_BYTES,
@@ -13,6 +14,9 @@ export interface MemoryLimitOption {
 
 export interface SettingsDialogCallbacks {
   onSavePreloadLimit: (bytes: number) => Promise<UserPreferences>;
+  onGetShellIntegrationStatus: () => Promise<ShellIntegrationStatus>;
+  onRegisterShellIntegration: () => Promise<ShellIntegrationStatus>;
+  onUnregisterShellIntegration: () => Promise<ShellIntegrationStatus>;
 }
 
 export function memoryLimitPresetOptions(): MemoryLimitOption[] {
@@ -41,11 +45,18 @@ export function settingsSummaryText({
   )} · ${mode}`;
 }
 
+export function shellIntegrationTargetSummary(): string {
+  return '.jpg, .jpeg, .png, .webp, .gif, and folders';
+}
+
 export class SettingsDialog {
   private host: HTMLElement;
   private cbs: SettingsDialogCallbacks;
   private overlay: HTMLDivElement | null = null;
   private customInput: HTMLInputElement | null = null;
+  private shellStatusText: HTMLParagraphElement | null = null;
+  private shellRegisterButton: HTMLButtonElement | null = null;
+  private shellUnregisterButton: HTMLButtonElement | null = null;
   private selectedBytes = DEFAULT_ANIMATED_PRELOAD_MEMORY_LIMIT_BYTES;
 
   constructor(host: HTMLElement, cbs: SettingsDialogCallbacks) {
@@ -58,6 +69,7 @@ export class SettingsDialog {
     this.ensureBuilt();
     this.syncControls();
     this.overlay!.classList.add('active');
+    void this.refreshShellIntegrationStatus();
   }
 
   close(): void {
@@ -148,12 +160,46 @@ export class SettingsDialog {
     });
     actions.appendChild(save);
 
+    const integrationSection = document.createElement('section');
+    integrationSection.className = 'settings-section settings-integration-section';
+    const integrationTitle = document.createElement('h3');
+    integrationTitle.textContent = 'Windows integration';
+    const integrationDescription = document.createElement('p');
+    integrationDescription.textContent = `Optional per-user right-click menu for ${shellIntegrationTargetSummary()}. It does not become the default app.`;
+    const shellStatusText = document.createElement('p');
+    shellStatusText.className = 'settings-shell-status';
+    shellStatusText.textContent = 'Checking Windows integration...';
+    const shellActions = document.createElement('div');
+    shellActions.className = 'settings-shell-actions';
+    const registerButton = document.createElement('button');
+    registerButton.type = 'button';
+    registerButton.textContent = 'Register';
+    registerButton.addEventListener('click', () => {
+      void this.runShellIntegrationAction(() => this.cbs.onRegisterShellIntegration());
+    });
+    const unregisterButton = document.createElement('button');
+    unregisterButton.type = 'button';
+    unregisterButton.textContent = 'Remove';
+    unregisterButton.addEventListener('click', () => {
+      void this.runShellIntegrationAction(() => this.cbs.onUnregisterShellIntegration());
+    });
+    shellActions.appendChild(registerButton);
+    shellActions.appendChild(unregisterButton);
+    integrationSection.appendChild(integrationTitle);
+    integrationSection.appendChild(integrationDescription);
+    integrationSection.appendChild(shellStatusText);
+    integrationSection.appendChild(shellActions);
+    this.shellStatusText = shellStatusText;
+    this.shellRegisterButton = registerButton;
+    this.shellUnregisterButton = unregisterButton;
+
     section.appendChild(sectionTitle);
     section.appendChild(description);
     section.appendChild(options);
     section.appendChild(customLabel);
     panel.appendChild(header);
     panel.appendChild(section);
+    panel.appendChild(integrationSection);
     panel.appendChild(actions);
     overlay.appendChild(panel);
     overlay.addEventListener('click', (ev) => {
@@ -162,6 +208,54 @@ export class SettingsDialog {
 
     this.host.appendChild(overlay);
     this.overlay = overlay;
+  }
+
+  private async refreshShellIntegrationStatus(): Promise<void> {
+    this.setShellIntegrationBusy(true, 'Checking Windows integration...');
+    try {
+      this.applyShellIntegrationStatus(await this.cbs.onGetShellIntegrationStatus());
+    } catch {
+      this.setShellIntegrationBusy(false, 'Windows integration status could not be checked.');
+    }
+  }
+
+  private async runShellIntegrationAction(
+    action: () => Promise<ShellIntegrationStatus>,
+  ): Promise<void> {
+    this.setShellIntegrationBusy(true, 'Updating Windows integration...');
+    try {
+      this.applyShellIntegrationStatus(await action());
+    } catch {
+      this.setShellIntegrationBusy(false, 'Windows integration update failed.');
+    }
+  }
+
+  private setShellIntegrationBusy(disabled: boolean, text?: string): void {
+    if (this.shellStatusText && text) this.shellStatusText.textContent = text;
+    if (this.shellRegisterButton) this.shellRegisterButton.disabled = disabled;
+    if (this.shellUnregisterButton) this.shellUnregisterButton.disabled = disabled;
+  }
+
+  private applyShellIntegrationStatus(status: ShellIntegrationStatus): void {
+    const unavailable = !status.available || status.state === 'unavailable';
+    const registered = status.state === 'registered';
+    const statusText =
+      status.state === 'registered'
+        ? `Registered for ${shellIntegrationTargetSummary()}.`
+        : status.state === 'partial'
+          ? 'Partially registered or pointing to another app location. Register again to refresh it.'
+          : status.state === 'not-registered'
+            ? 'Not registered. Register to add the right-click menu.'
+            : (status.message ?? 'Windows integration is available on Windows only.');
+
+    if (this.shellStatusText) this.shellStatusText.textContent = statusText;
+    if (this.shellRegisterButton) this.shellRegisterButton.disabled = unavailable;
+    if (this.shellUnregisterButton) {
+      this.shellUnregisterButton.disabled =
+        unavailable ||
+        status.state === 'not-registered' ||
+        (!registered && status.targets.length === 0);
+    }
   }
 
   private syncControls(): void {

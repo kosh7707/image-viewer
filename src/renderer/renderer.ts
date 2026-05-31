@@ -112,6 +112,9 @@ async function getSettingsDialog(): Promise<SettingsDialogInstance> {
       applyPreferences(prefs);
       return prefs;
     },
+    onGetShellIntegrationStatus: () => window.api.getShellIntegrationStatus(),
+    onRegisterShellIntegration: () => window.api.registerShellIntegration(),
+    onUnregisterShellIntegration: () => window.api.unregisterShellIntegration(),
   });
   return settingsDialog;
 }

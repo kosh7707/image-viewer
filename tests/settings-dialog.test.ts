@@ -1,6 +1,10 @@
 import { test } from 'node:test';
 import * as assert from 'node:assert/strict';
-import { memoryLimitPresetOptions, settingsSummaryText } from '../src/renderer/settings-dialog';
+import {
+  memoryLimitPresetOptions,
+  settingsSummaryText,
+  shellIntegrationTargetSummary,
+} from '../src/renderer/settings-dialog';
 import { gbToMemoryLimitBytes } from '../src/shared/user-preferences';
 
 test('settings dialog memory labels are human-readable GB values, never raw bytes', () => {
@@ -24,4 +28,17 @@ test('settings summary communicates rolling preload with GB labels', () => {
   assert.match(summary, /4 GB/);
   assert.match(summary, /Rolling preload/);
   assert.equal(summary.includes('4294967296'), false);
+});
+
+test('settings shell integration copy promises explicit extensions and folders only', () => {
+  const summary = shellIntegrationTargetSummary();
+
+  assert.match(summary, /\.jpg/);
+  assert.match(summary, /\.jpeg/);
+  assert.match(summary, /\.png/);
+  assert.match(summary, /\.webp/);
+  assert.match(summary, /\.gif/);
+  assert.match(summary, /folders/i);
+  assert.doesNotMatch(summary, /all files/i);
+  assert.doesNotMatch(summary, /default app/i);
 });

@@ -11,6 +11,7 @@ let preferencesModulePromise: Promise<typeof import('./preferences')> | null = n
 let rssModulePromise: Promise<typeof import('./rss')> | null = null;
 let menuModulePromise: Promise<typeof import('./menu')> | null = null;
 let windowModulePromise: Promise<typeof import('./window')> | null = null;
+let shellIntegrationModulePromise: Promise<typeof import('./shell-integration')> | null = null;
 let animationSpeedMultiplier = 1.0;
 
 const processStartedAt = Date.now();
@@ -88,6 +89,14 @@ function loadWindowModule(): Promise<typeof import('./window')> {
     throw error;
   });
   return windowModulePromise;
+}
+
+function loadShellIntegrationModule(): Promise<typeof import('./shell-integration')> {
+  shellIntegrationModulePromise ??= import('./shell-integration').catch((error) => {
+    shellIntegrationModulePromise = null;
+    throw error;
+  });
+  return shellIntegrationModulePromise;
 }
 
 async function loadPreferences(): Promise<UserPreferences> {
@@ -289,6 +298,21 @@ ipcMain.handle('preferences:get', async (): Promise<UserPreferences> => {
 ipcMain.handle('preload-limit:update', async (_event, bytes: number): Promise<UserPreferences> => {
   const preferences = await loadPreferencesModule();
   return await preferences.updateAnimatedPreloadMemoryLimit(userDataDir(), bytes);
+});
+
+ipcMain.handle('shell-integration:status', async () => {
+  const shellIntegration = await loadShellIntegrationModule();
+  return await shellIntegration.getShellIntegrationStatus({ exePath: process.execPath });
+});
+
+ipcMain.handle('shell-integration:register', async () => {
+  const shellIntegration = await loadShellIntegrationModule();
+  return await shellIntegration.registerShellIntegration({ exePath: process.execPath });
+});
+
+ipcMain.handle('shell-integration:unregister', async () => {
+  const shellIntegration = await loadShellIntegrationModule();
+  return await shellIntegration.unregisterShellIntegration({ exePath: process.execPath });
 });
 
 ipcMain.handle('fs:readFile', async (_event, filePath: string) => {

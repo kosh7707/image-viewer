@@ -9,6 +9,9 @@ const api = {
   getPreferences: () => ipcRenderer.invoke('preferences:get'),
   updateAnimatedPreloadMemoryLimit: (bytes: number) =>
     ipcRenderer.invoke('preload-limit:update', bytes),
+  getShellIntegrationStatus: () => ipcRenderer.invoke('shell-integration:status'),
+  registerShellIntegration: () => ipcRenderer.invoke('shell-integration:register'),
+  unregisterShellIntegration: () => ipcRenderer.invoke('shell-integration:unregister'),
   readFile: async (filePath: string): Promise<Uint8Array> => {
     const buf = (await ipcRenderer.invoke('fs:readFile', filePath)) as Buffer | Uint8Array;
     return new Uint8Array(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength));
