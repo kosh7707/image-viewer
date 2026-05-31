@@ -11,6 +11,7 @@
     "dist": "npm run build && electron-builder --dir && npm run portable:folder",
     "portable:folder": "node scripts/make-portable-folder.js release/win-unpacked release",
     "portable:audit": "node scripts/audit-portable-folder.js release/ImageViewerPortable",
+    "startup:audit": "node scripts/audit-startup-imports.js",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
