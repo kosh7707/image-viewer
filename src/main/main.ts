@@ -3,7 +3,6 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { pathToFileURL } from 'url';
 import { SUPPORTED_EXTS } from './folder';
-import { toggleFullscreen } from './window';
 import type { UserPreferences } from '../shared/user-preferences';
 import { applyPortableRuntimePaths, type PortableLayout } from './portable-runtime';
 import { createBootTimingLogger, type BootTimingLogger } from './boot-timing';
@@ -13,6 +12,7 @@ let albumFlowPromise: Promise<typeof import('./album-flow')> | null = null;
 let preferencesModulePromise: Promise<typeof import('./preferences')> | null = null;
 let rssModulePromise: Promise<typeof import('./rss')> | null = null;
 let menuModulePromise: Promise<typeof import('./menu')> | null = null;
+let windowModulePromise: Promise<typeof import('./window')> | null = null;
 let animationSpeedMultiplier = 1.0;
 
 const processStartedAt = Date.now();
@@ -46,9 +46,27 @@ function loadMenuModule(): Promise<typeof import('./menu')> {
   return menuModulePromise;
 }
 
+function loadWindowModule(): Promise<typeof import('./window')> {
+  windowModulePromise ??= import('./window').catch((error) => {
+    windowModulePromise = null;
+    throw error;
+  });
+  return windowModulePromise;
+}
+
 async function loadPreferences(): Promise<UserPreferences> {
   const preferences = await loadPreferencesModule();
   return await preferences.loadPreferences(userDataDir());
+}
+
+async function toggleFullscreenForWindow(win: BrowserWindow): Promise<boolean> {
+  try {
+    const windowHelpers = await loadWindowModule();
+    if (win.isDestroyed()) return false;
+    return windowHelpers.toggleFullscreen(win);
+  } catch {
+    return false;
+  }
 }
 
 async function startRssMonitorForWindow(win: BrowserWindow): Promise<void> {
@@ -218,10 +236,10 @@ function createWindow(): void {
 }
 
 // --- IPC wiring ---
-ipcMain.handle('window:toggleFullscreen', (event) => {
+ipcMain.handle('window:toggleFullscreen', async (event) => {
   const win = BrowserWindow.fromWebContents(event.sender);
   if (!win) return false;
-  return toggleFullscreen(win);
+  return await toggleFullscreenForWindow(win);
 });
 
 ipcMain.handle('menu:show', async (event, point?: { x: number; y: number }) => {

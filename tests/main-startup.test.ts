@@ -69,6 +69,21 @@ test('main startup does not statically import the context menu implementation', 
   assert.match(main, /openFolder:\s*async\s*\(\)\s*=>/);
 });
 
+test('main startup does not statically import the fullscreen window helper', () => {
+  const imports = runtimeStaticImportSpecifiers('src/main/main.ts');
+  const main = readSource('src/main/main.ts');
+
+  assert.ok(!imports.includes('./window'));
+  assert.match(main, /let windowModulePromise/);
+  assert.match(main, /windowModulePromise\s*=\s*null/);
+  assert.match(main, /async function toggleFullscreenForWindow/);
+  assert.match(main, /try\s*{[\s\S]*await loadWindowModule\(\)[\s\S]*catch\s*{/);
+  assert.match(main, /if\s*\(\s*win\.isDestroyed\(\)\s*\)\s*return false/);
+  assert.match(main, /catch\s*{[\s\S]*return false/);
+  assert.match(main, /if\s*\(\s*!win\s*\)\s*return false/);
+  assert.match(main, /return await toggleFullscreenForWindow\(win\)/);
+});
+
 test('BrowserWindow creation is not blocked on preference loading', () => {
   const main = readSource('src/main/main.ts');
   const readyStart = main.indexOf('app.whenReady()');
