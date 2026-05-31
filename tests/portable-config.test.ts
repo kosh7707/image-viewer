@@ -122,6 +122,7 @@ test('normal development runs do not redirect Electron data paths', () => {
 
 test('folder portable mode applies userData, sessionData, and logs paths', () => {
   const root = path.resolve('ImageViewerPortable');
+  const source = fs.readFileSync('src/main/portable-runtime.ts', 'utf8');
   const calls: Array<[string, string]> = [];
   const logs: string[] = [];
   const ensured: string[] = [];
@@ -143,6 +144,6 @@ test('folder portable mode applies userData, sessionData, and logs paths', () =>
   assert.deepEqual(ensured, [
     path.join(root, 'Data', 'userData'),
     path.join(root, 'Data', 'sessionData'),
-    path.join(root, 'Data', 'logs'),
   ]);
+  assert.doesNotMatch(source, /ensureDir\(layout\.logsDir\)/);
 });

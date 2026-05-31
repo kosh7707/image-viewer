@@ -88,7 +88,6 @@ export function applyPortableRuntimePaths(
   const ensureDir = options.ensureDir ?? ((dir: string) => fs.mkdirSync(dir, { recursive: true }));
   ensureDir(layout.userDataDir);
   ensureDir(layout.sessionDataDir);
-  ensureDir(layout.logsDir);
 
   options.setPath('userData', layout.userDataDir);
   options.setPath('sessionData', layout.sessionDataDir);
