@@ -5,7 +5,6 @@ import { pathToFileURL } from 'url';
 import { SUPPORTED_EXTS } from './folder';
 import { toggleFullscreen } from './window';
 import { configureMenuActions, showContextMenu, menuState } from './menu';
-import { startRssMonitor, stopRssMonitor } from './rss';
 import type { UserPreferences } from '../shared/user-preferences';
 import { applyPortableRuntimePaths, type PortableLayout } from './portable-runtime';
 import { createBootTimingLogger, type BootTimingLogger } from './boot-timing';
@@ -13,6 +12,7 @@ import { createBootTimingLogger, type BootTimingLogger } from './boot-timing';
 let mainWindow: BrowserWindow | null = null;
 let albumFlowPromise: Promise<typeof import('./album-flow')> | null = null;
 let preferencesModulePromise: Promise<typeof import('./preferences')> | null = null;
+let rssModulePromise: Promise<typeof import('./rss')> | null = null;
 
 const processStartedAt = Date.now();
 const portableLayout = applyPortableRuntimePaths({
@@ -35,9 +35,38 @@ function loadPreferencesModule(): Promise<typeof import('./preferences')> {
   return preferencesModulePromise;
 }
 
+function loadRssModule(): Promise<typeof import('./rss')> {
+  rssModulePromise ??= import('./rss');
+  return rssModulePromise;
+}
+
 async function loadPreferences(): Promise<UserPreferences> {
   const preferences = await loadPreferencesModule();
   return await preferences.loadPreferences(userDataDir());
+}
+
+async function startRssMonitorForWindow(win: BrowserWindow): Promise<void> {
+  try {
+    const rss = await loadRssModule();
+    if (!win.isDestroyed()) {
+      rss.startRssMonitor(win);
+    } else {
+      rss.stopRssMonitor();
+    }
+  } catch {
+    // RSS monitoring is diagnostic only and must not affect startup.
+  }
+}
+
+function stopRssMonitorIfLoaded(): void {
+  if (!rssModulePromise) return;
+  void rssModulePromise
+    .then((rss) => {
+      rss.stopRssMonitor();
+    })
+    .catch(() => {
+      // Ignore failed optional RSS monitor imports.
+    });
 }
 
 function createOptionalBootLogger(layout: PortableLayout | null): BootTimingLogger | null {
@@ -150,11 +179,11 @@ function createWindow(): void {
     if (arg) {
       void handleArgPath(arg, mainWindow);
     }
-    startRssMonitor(mainWindow);
+    void startRssMonitorForWindow(mainWindow);
   });
 
   mainWindow.on('closed', () => {
-    stopRssMonitor();
+    stopRssMonitorIfLoaded();
     mainWindow = null;
   });
 }

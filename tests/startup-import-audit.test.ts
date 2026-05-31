@@ -146,6 +146,25 @@ test('startup import audit forbids preference modules by default', () => {
   }
 });
 
+test('startup import audit forbids the RSS monitor by default', () => {
+  const result = auditTempGraph(
+    {
+      'src/main/main.ts': "import { startRssMonitor } from './rss';\nstartRssMonitor();\n",
+      'src/main/rss.ts': 'export function startRssMonitor() {}\n',
+    },
+    {
+      forbiddenLocalModules: undefined,
+      forbiddenPackages: [],
+    },
+  );
+  try {
+    assert.equal(result.status, 'fail');
+    assert.equal(result.violations[0]?.target.replaceAll('\\\\', '/'), 'src/main/rss.ts');
+  } finally {
+    cleanupTemp(result);
+  }
+});
+
 test('startup import audit ignores dynamic imports, typeof imports, and type-only imports', () => {
   const result = auditTempGraph({
     'src/main/main.ts': [
@@ -207,6 +226,7 @@ test('startup import audit passes for the real main startup graph', () => {
   assert.ok(!result.visited.includes('src/main/album-flow.ts'));
   assert.ok(!result.visited.includes('src/main/preferences.ts'));
   assert.ok(!result.visited.includes('src/shared/user-preferences.ts'));
+  assert.ok(!result.visited.includes('src/main/rss.ts'));
 });
 
 test('startup import audit CLI emits deterministic JSON and exit codes', () => {

@@ -40,6 +40,16 @@ test('main startup does not statically import preference storage or normalizatio
   assert.ok(!imports.includes('../shared/user-preferences'));
 });
 
+test('main startup does not statically import the RSS monitor', () => {
+  const imports = runtimeStaticImportSpecifiers('src/main/main.ts');
+  const main = readSource('src/main/main.ts');
+
+  assert.ok(!imports.includes('./rss'));
+  assert.match(main, /startRssMonitorForWindow/);
+  assert.match(main, /stopRssMonitorIfLoaded/);
+  assert.match(main, /did-finish-load/);
+});
+
 test('BrowserWindow creation is not blocked on preference loading', () => {
   const main = readSource('src/main/main.ts');
   const readyStart = main.indexOf('app.whenReady()');
