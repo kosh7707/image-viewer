@@ -14,6 +14,7 @@ const DEFAULT_FORBIDDEN_LOCAL_MODULES = [
   'src/main/rss.ts',
   'src/main/menu.ts',
   'src/main/window.ts',
+  'src/main/folder.ts',
 ];
 const DEFAULT_FORBIDDEN_PACKAGES = ['gifuct-js', 'image-size'];
 

@@ -203,6 +203,26 @@ test('startup import audit forbids the fullscreen window helper by default', () 
   }
 });
 
+test('startup import audit forbids folder extension constants by default', () => {
+  const result = auditTempGraph(
+    {
+      'src/main/main.ts':
+        "import { SUPPORTED_EXTS } from './folder';\nconsole.log(SUPPORTED_EXTS);\n",
+      'src/main/folder.ts': "export const SUPPORTED_EXTS = ['.png'] as const;\n",
+    },
+    {
+      forbiddenLocalModules: undefined,
+      forbiddenPackages: [],
+    },
+  );
+  try {
+    assert.equal(result.status, 'fail');
+    assert.equal(result.violations[0]?.target.replaceAll('\\\\', '/'), 'src/main/folder.ts');
+  } finally {
+    cleanupTemp(result);
+  }
+});
+
 test('startup import audit ignores dynamic imports, typeof imports, and type-only imports', () => {
   const result = auditTempGraph({
     'src/main/main.ts': [
@@ -266,6 +286,7 @@ test('startup import audit passes for the real main startup graph', () => {
   assert.ok(!result.visited.includes('src/main/rss.ts'));
   assert.ok(!result.visited.includes('src/main/menu.ts'));
   assert.ok(!result.visited.includes('src/main/window.ts'));
+  assert.ok(!result.visited.includes('src/main/folder.ts'));
 });
 
 test('startup import audit CLI emits deterministic JSON and exit codes', () => {

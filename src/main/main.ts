@@ -2,7 +2,6 @@ import { app, BrowserWindow, ipcMain, Menu } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import { pathToFileURL } from 'url';
-import { SUPPORTED_EXTS } from './folder';
 import type { UserPreferences } from '../shared/user-preferences';
 import { applyPortableRuntimePaths, type PortableLayout } from './portable-runtime';
 import { createBootTimingLogger, type BootTimingLogger } from './boot-timing';
@@ -132,6 +131,7 @@ function logBootEvent(event: string): void {
 // Defense-in-depth: the renderer may only read files belonging to the most
 // recently broadcast album. Each entry is an absolute, resolved path string.
 const currentAlbumPaths: Set<string> = new Set();
+const READABLE_IMAGE_EXTS = ['.jpg', '.jpeg', '.png', '.webp', '.gif'] as const;
 
 export function setAlbumPaths(images: string[]): void {
   currentAlbumPaths.clear();
@@ -157,7 +157,7 @@ function resolveReadableAlbumImage(filePath: string): string {
     throw new Error('filePath must be a string');
   }
   const ext = path.extname(filePath).toLowerCase();
-  if (!(SUPPORTED_EXTS as readonly string[]).includes(ext)) {
+  if (!(READABLE_IMAGE_EXTS as readonly string[]).includes(ext)) {
     throw new Error(`Unsupported extension: ${ext}`);
   }
   const resolved = path.resolve(filePath);

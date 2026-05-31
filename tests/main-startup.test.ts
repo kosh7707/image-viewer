@@ -84,6 +84,15 @@ test('main startup does not statically import the fullscreen window helper', () 
   assert.match(main, /return await toggleFullscreenForWindow\(win\)/);
 });
 
+test('main startup does not statically import folder extension constants', () => {
+  const imports = runtimeStaticImportSpecifiers('src/main/main.ts');
+  const main = readSource('src/main/main.ts');
+
+  assert.ok(!imports.includes('./folder'));
+  assert.match(main, /const READABLE_IMAGE_EXTS\s*=/);
+  assert.match(main, /READABLE_IMAGE_EXTS as readonly string\[\]/);
+});
+
 test('BrowserWindow creation is not blocked on preference loading', () => {
   const main = readSource('src/main/main.ts');
   const readyStart = main.indexOf('app.whenReady()');
