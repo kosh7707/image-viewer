@@ -20,9 +20,24 @@ export interface SortResult {
   currentIndex: number;
 }
 
+const NATURAL_FILENAME_COLLATOR = new Intl.Collator(undefined, {
+  numeric: true,
+  sensitivity: 'base',
+});
+
 function basename(p: string): string {
   const i = Math.max(p.lastIndexOf('/'), p.lastIndexOf('\\'));
   return i >= 0 ? p.slice(i + 1) : p;
+}
+
+function compareFilenamePath(leftPath: string, rightPath: string): number {
+  const left = basename(leftPath);
+  const right = basename(rightPath);
+  const natural = NATURAL_FILENAME_COLLATOR.compare(left, right);
+  if (natural !== 0) return natural;
+  const exact = left.localeCompare(right, undefined, { sensitivity: 'variant' });
+  if (exact !== 0) return exact;
+  return leftPath.localeCompare(rightPath, undefined, { numeric: true, sensitivity: 'base' });
 }
 
 export function sortAlbum(
@@ -36,9 +51,7 @@ export function sortAlbum(
   const sign = order === 'asc' ? 1 : -1;
   const sorted = album.slice().sort((a, b) => {
     if (key === 'filename') {
-      return (
-        sign * basename(a.path).localeCompare(basename(b.path), undefined, { sensitivity: 'base' })
-      );
+      return sign * compareFilenamePath(a.path, b.path);
     }
     // mtime
     return sign * (a.mtimeMs - b.mtimeMs);

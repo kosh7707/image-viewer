@@ -37,6 +37,24 @@ test('sort by filename desc', () => {
   assert.equal(r.currentIndex, 0);
 });
 
+test('sort by filename asc uses natural numeric order', () => {
+  const album: AlbumEntry[] = [
+    { path: '/p/100.jpg', mtimeMs: 1 },
+    { path: '/p/10.jpg', mtimeMs: 2 },
+    { path: '/p/2.jpg', mtimeMs: 3 },
+    { path: '/p/11.jpg', mtimeMs: 4 },
+    { path: '/p/1.jpg', mtimeMs: 5 },
+  ];
+
+  const r = run(album, 'filename', 'asc', '/p/10.jpg');
+
+  assert.deepEqual(
+    r.entries.map((e) => e.path),
+    ['/p/1.jpg', '/p/2.jpg', '/p/10.jpg', '/p/11.jpg', '/p/100.jpg'],
+  );
+  assert.equal(r.currentIndex, 2);
+});
+
 test('sort by mtime asc', () => {
   const r = run(makeAlbum(), 'mtime', 'asc', '/p/c.jpg');
   assert.deepEqual(

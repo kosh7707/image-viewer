@@ -3,6 +3,10 @@ import * as path from 'node:path';
 
 const SUPPORTED_EXT = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif']);
 const MAX_DEPTH = 4;
+const NATURAL_FILENAME_COLLATOR = new Intl.Collator(undefined, {
+  numeric: true,
+  sensitivity: 'base',
+});
 
 export interface WalkEntry {
   path: string;
@@ -40,6 +44,16 @@ function walkInto(dir: string, level: number, out: WalkEntry[]): void {
   }
 }
 
+function compareWalkEntryName(a: WalkEntry, b: WalkEntry): number {
+  const left = path.basename(a.path);
+  const right = path.basename(b.path);
+  const natural = NATURAL_FILENAME_COLLATOR.compare(left, right);
+  if (natural !== 0) return natural;
+  const exact = left.localeCompare(right, undefined, { sensitivity: 'variant' });
+  if (exact !== 0) return exact;
+  return a.path.localeCompare(b.path, undefined, { numeric: true, sensitivity: 'base' });
+}
+
 /**
  * Recursively collect supported image files under `rootDir`, capped at
  * `MAX_DEPTH = 4` levels. Symlinks are skipped (no cycle following).
@@ -49,6 +63,6 @@ function walkInto(dir: string, level: number, out: WalkEntry[]): void {
 export function walkImages(rootDir: string): WalkEntry[] {
   const out: WalkEntry[] = [];
   walkInto(rootDir, 1, out);
-  out.sort((a, b) => path.basename(a.path).localeCompare(path.basename(b.path)));
+  out.sort(compareWalkEntryName);
   return out;
 }

@@ -29,6 +29,20 @@ test('walk: collects images at depth 1 sorted alphabetically', () => {
   );
 });
 
+test('walk: sorts numeric filenames naturally', () => {
+  const d = tmpdir('numeric');
+  for (const name of ['100.jpg', '10.jpg', '2.jpg', '11.jpg', '1.jpg']) {
+    touch(path.join(d, name));
+  }
+
+  const result = walkImages(d);
+
+  assert.deepEqual(
+    result.map((r) => path.basename(r.path)),
+    ['1.jpg', '2.jpg', '10.jpg', '11.jpg', '100.jpg'],
+  );
+});
+
 test('walk: depth cap = 4, silently drops deeper', () => {
   const d = tmpdir('depth');
   // depth 1

@@ -1,9 +1,9 @@
 /**
  * progress-toast.ts — single sticky toast that reports album-load progress.
  *
- * Phases: 'scanning' (file discovery before exact totals are known) and
- * 'preloading' (image decoding in renderer). The toast updates its text in
- * place and auto-dismisses when the final phase completes.
+ * Only the app-visible album scanning phase is surfaced here. Renderer
+ * background preloading updates are intentionally silent so preloaded images
+ * do not keep showing a confusing "loading" toast during normal browsing.
  */
 
 import type { AlbumProgressPhase } from '../preload/api';
@@ -15,10 +15,7 @@ export interface ProgressUpdate {
   bytesSoFar?: number;
 }
 
-const PHASE_LABEL: Record<ProgressUpdate['phase'], string> = {
-  scanning: '파일 찾는 중',
-  preloading: '로딩 중',
-};
+const SCANNING_LABEL = '파일 찾는 중';
 
 export class ProgressToast {
   private host: HTMLElement;
@@ -30,25 +27,25 @@ export class ProgressToast {
   }
 
   update(u: ProgressUpdate): void {
-    if (u.total <= 0) {
-      if (u.phase === 'scanning') {
-        this.cancelHideTimer();
-        this.ensureNode();
-        this.node!.textContent = `${PHASE_LABEL[u.phase]}...`;
-        return;
-      }
+    if (u.phase !== 'scanning') {
       this.hide();
+      return;
+    }
+
+    if (u.total <= 0) {
+      this.cancelHideTimer();
+      this.ensureNode();
+      this.node!.textContent = `${SCANNING_LABEL}...`;
       return;
     }
     this.cancelHideTimer();
     this.ensureNode();
-    const label = PHASE_LABEL[u.phase];
     const pct = u.total > 0 ? Math.round((u.completed / u.total) * 100) : 0;
     const sizePart =
       u.bytesSoFar !== undefined && u.bytesSoFar > 0
         ? ` · ${(u.bytesSoFar / 1024 / 1024).toFixed(0)} MB`
         : '';
-    this.node!.textContent = `${label} ${u.completed} / ${u.total} (${pct}%)${sizePart}`;
+    this.node!.textContent = `${SCANNING_LABEL} ${u.completed} / ${u.total} (${pct}%)${sizePart}`;
     if (u.completed >= u.total && u.total > 0) {
       // Hide a moment after the phase completes; another phase may immediately
       // call update() and that will cancel this timer.

@@ -369,6 +369,7 @@ window.api.onAlbumLoad((payload) => {
   albumEpoch += 1;
   bumpEpoch();
   preloader.cancelScheduled();
+  progressToast.hide();
   governor.evictAll();
   preparedMediaCache.clear();
   animatedPreloader.clear();
@@ -457,8 +458,7 @@ function schedulePreloads(options: { protectCurrent?: boolean } = { protectCurre
   preloader.scheduleAll(
     album.entries(),
     albumEpoch,
-    ({ completed, total }) => {
-      progressToast.update({ phase: 'preloading', completed, total });
+    () => {
       refreshPreloadPanel();
     },
     {
