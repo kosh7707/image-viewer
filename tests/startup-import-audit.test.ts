@@ -165,6 +165,25 @@ test('startup import audit forbids the RSS monitor by default', () => {
   }
 });
 
+test('startup import audit forbids the context menu implementation by default', () => {
+  const result = auditTempGraph(
+    {
+      'src/main/main.ts': "import { showContextMenu } from './menu';\nshowContextMenu();\n",
+      'src/main/menu.ts': 'export function showContextMenu() {}\n',
+    },
+    {
+      forbiddenLocalModules: undefined,
+      forbiddenPackages: [],
+    },
+  );
+  try {
+    assert.equal(result.status, 'fail');
+    assert.equal(result.violations[0]?.target.replaceAll('\\\\', '/'), 'src/main/menu.ts');
+  } finally {
+    cleanupTemp(result);
+  }
+});
+
 test('startup import audit ignores dynamic imports, typeof imports, and type-only imports', () => {
   const result = auditTempGraph({
     'src/main/main.ts': [
@@ -222,11 +241,11 @@ test('startup import audit passes for the real main startup graph', () => {
   assert.equal(result.status, 'ok');
   assert.deepEqual(result.violations, []);
   assert.ok(result.visited.includes('src/main/main.ts'));
-  assert.ok(result.visited.includes('src/main/menu.ts'));
   assert.ok(!result.visited.includes('src/main/album-flow.ts'));
   assert.ok(!result.visited.includes('src/main/preferences.ts'));
   assert.ok(!result.visited.includes('src/shared/user-preferences.ts'));
   assert.ok(!result.visited.includes('src/main/rss.ts'));
+  assert.ok(!result.visited.includes('src/main/menu.ts'));
 });
 
 test('startup import audit CLI emits deterministic JSON and exit codes', () => {

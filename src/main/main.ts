@@ -4,7 +4,6 @@ import * as fs from 'fs';
 import { pathToFileURL } from 'url';
 import { SUPPORTED_EXTS } from './folder';
 import { toggleFullscreen } from './window';
-import { configureMenuActions, showContextMenu, menuState } from './menu';
 import type { UserPreferences } from '../shared/user-preferences';
 import { applyPortableRuntimePaths, type PortableLayout } from './portable-runtime';
 import { createBootTimingLogger, type BootTimingLogger } from './boot-timing';
@@ -13,6 +12,8 @@ let mainWindow: BrowserWindow | null = null;
 let albumFlowPromise: Promise<typeof import('./album-flow')> | null = null;
 let preferencesModulePromise: Promise<typeof import('./preferences')> | null = null;
 let rssModulePromise: Promise<typeof import('./rss')> | null = null;
+let menuModulePromise: Promise<typeof import('./menu')> | null = null;
+let animationSpeedMultiplier = 1.0;
 
 const processStartedAt = Date.now();
 const portableLayout = applyPortableRuntimePaths({
@@ -38,6 +39,11 @@ function loadPreferencesModule(): Promise<typeof import('./preferences')> {
 function loadRssModule(): Promise<typeof import('./rss')> {
   rssModulePromise ??= import('./rss');
   return rssModulePromise;
+}
+
+function loadMenuModule(): Promise<typeof import('./menu')> {
+  menuModulePromise ??= import('./menu');
+  return menuModulePromise;
 }
 
 async function loadPreferences(): Promise<UserPreferences> {
@@ -67,6 +73,29 @@ function stopRssMonitorIfLoaded(): void {
     .catch(() => {
       // Ignore failed optional RSS monitor imports.
     });
+}
+
+async function showContextMenuForWindow(
+  win: BrowserWindow,
+  point?: { x: number; y: number },
+): Promise<void> {
+  try {
+    const menu = await loadMenuModule();
+    if (win.isDestroyed()) return;
+    menu.showContextMenu(win, point, {
+      speedMultiplier: animationSpeedMultiplier,
+      openFile: async () => {
+        const { openFileDialogAndLoad } = await loadAlbumFlow();
+        await openFileDialogAndLoad(win);
+      },
+      openFolder: async () => {
+        const { openFolderDialogAndLoad } = await loadAlbumFlow();
+        await openFolderDialogAndLoad(win);
+      },
+    });
+  } catch {
+    // Context menus are optional and must not make menu:show reject.
+  }
 }
 
 function createOptionalBootLogger(layout: PortableLayout | null): BootTimingLogger | null {
@@ -195,17 +224,17 @@ ipcMain.handle('window:toggleFullscreen', (event) => {
   return toggleFullscreen(win);
 });
 
-ipcMain.handle('menu:show', (event, point?: { x: number; y: number }) => {
+ipcMain.handle('menu:show', async (event, point?: { x: number; y: number }) => {
   const win = BrowserWindow.fromWebContents(event.sender);
   if (!win) return;
-  showContextMenu(win, point);
+  await showContextMenuForWindow(win, point);
 });
 
 ipcMain.handle('speed:update', async (_event, mult: number) => {
   if (typeof mult === 'number' && Number.isFinite(mult)) {
     const preferences = await loadPreferencesModule();
     const saved = await preferences.updateAnimationSpeed(userDataDir(), mult);
-    menuState.speedMultiplier = saved.animation.speedMultiplier;
+    animationSpeedMultiplier = saved.animation.speedMultiplier;
   }
 });
 
@@ -250,23 +279,12 @@ ipcMain.on('boot:renderer-ready', () => {
   logBootEvent('renderer-ready');
 });
 
-configureMenuActions({
-  openFile: async (win) => {
-    const { openFileDialogAndLoad } = await loadAlbumFlow();
-    await openFileDialogAndLoad(win);
-  },
-  openFolder: async (win) => {
-    const { openFolderDialogAndLoad } = await loadAlbumFlow();
-    await openFolderDialogAndLoad(win);
-  },
-});
-
 app.whenReady().then(() => {
   logBootEvent('app-ready');
   createWindow();
   void loadPreferences()
     .then((prefs) => {
-      menuState.speedMultiplier = prefs.animation.speedMultiplier;
+      animationSpeedMultiplier = prefs.animation.speedMultiplier;
       logBootEvent('preferences-loaded');
     })
     .catch(() => {

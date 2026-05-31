@@ -12,6 +12,7 @@ const DEFAULT_FORBIDDEN_LOCAL_MODULES = [
   'src/main/preferences.ts',
   'src/shared/user-preferences.ts',
   'src/main/rss.ts',
+  'src/main/menu.ts',
 ];
 const DEFAULT_FORBIDDEN_PACKAGES = ['gifuct-js', 'image-size'];
 

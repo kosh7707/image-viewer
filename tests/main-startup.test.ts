@@ -50,6 +50,25 @@ test('main startup does not statically import the RSS monitor', () => {
   assert.match(main, /did-finish-load/);
 });
 
+test('main startup does not statically import the context menu implementation', () => {
+  const imports = runtimeStaticImportSpecifiers('src/main/main.ts');
+  const main = readSource('src/main/main.ts');
+
+  assert.ok(!imports.includes('./menu'));
+  assert.match(main, /let animationSpeedMultiplier\s*=\s*1\.0/);
+  assert.match(main, /animationSpeedMultiplier\s*=\s*saved\.animation\.speedMultiplier/);
+  assert.match(main, /animationSpeedMultiplier\s*=\s*prefs\.animation\.speedMultiplier/);
+  assert.match(main, /async function showContextMenuForWindow/);
+  assert.match(main, /try\s*{[\s\S]*await loadMenuModule\(\)[\s\S]*catch\s*{/);
+  assert.match(main, /if\s*\(\s*win\.isDestroyed\(\)\s*\)\s*return/);
+  assert.match(
+    main,
+    /showContextMenu\(win,\s*point,\s*{[\s\S]*speedMultiplier:\s*animationSpeedMultiplier/,
+  );
+  assert.match(main, /openFile:\s*async\s*\(\)\s*=>/);
+  assert.match(main, /openFolder:\s*async\s*\(\)\s*=>/);
+});
+
 test('BrowserWindow creation is not blocked on preference loading', () => {
   const main = readSource('src/main/main.ts');
   const readyStart = main.indexOf('app.whenReady()');

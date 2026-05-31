@@ -1,31 +1,14 @@
 import { Menu, app, BrowserWindow, MenuItemConstructorOptions } from 'electron';
 
-export interface MenuState {
-  speedMultiplier: number;
-}
-
-export const menuState: MenuState = {
-  speedMultiplier: 1.0,
-};
-
 export interface MenuPoint {
   x: number;
   y: number;
 }
 
-export interface MenuActions {
+export interface ContextMenuOptions {
+  speedMultiplier: number;
   openFile: (win: BrowserWindow) => void | Promise<void>;
   openFolder: (win: BrowserWindow) => void | Promise<void>;
-}
-
-const menuActions: MenuActions = {
-  openFile: () => undefined,
-  openFolder: () => undefined,
-};
-
-export function configureMenuActions(actions: Partial<MenuActions>): void {
-  if (actions.openFile) menuActions.openFile = actions.openFile;
-  if (actions.openFolder) menuActions.openFolder = actions.openFolder;
 }
 
 function normalizePoint(point: MenuPoint | undefined): MenuPoint | undefined {
@@ -37,18 +20,22 @@ function normalizePoint(point: MenuPoint | undefined): MenuPoint | undefined {
   };
 }
 
-export function showContextMenu(win: BrowserWindow, point?: MenuPoint): void {
+export function showContextMenu(
+  win: BrowserWindow,
+  point: MenuPoint | undefined,
+  options: ContextMenuOptions,
+): void {
   const template: MenuItemConstructorOptions[] = [
     {
       label: 'Open File...',
       click: () => {
-        void menuActions.openFile(win);
+        void options.openFile(win);
       },
     },
     {
       label: 'Open Folder...',
       click: () => {
-        void menuActions.openFolder(win);
+        void options.openFolder(win);
       },
     },
     { type: 'separator' },
@@ -66,7 +53,7 @@ export function showContextMenu(win: BrowserWindow, point?: MenuPoint): void {
     },
     { type: 'separator' },
     {
-      label: `Speed: ${menuState.speedMultiplier.toFixed(1)}x`,
+      label: `Speed: ${options.speedMultiplier.toFixed(1)}x`,
       enabled: false,
     },
     { type: 'separator' },
