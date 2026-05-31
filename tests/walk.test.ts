@@ -87,13 +87,14 @@ test('walk: skips hidden directories (leading dot)', () => {
   assert.deepEqual(names, ['visible.jpg']);
 });
 
-test('walk: returns mtime per entry (for later sorting)', () => {
+test('walk: returns mtime and encoded byte size per entry', () => {
   const d = tmpdir('mtime');
-  touch(path.join(d, 'a.jpg'));
+  touch(path.join(d, 'a.jpg'), 'abcde');
   const result = walkImages(d);
   assert.equal(result.length, 1);
   assert.equal(typeof result[0]!.mtimeMs, 'number');
   assert.ok(result[0]!.mtimeMs > 0);
+  assert.equal(result[0]!.encodedBytes, 5);
 });
 
 test('walk: empty directory returns empty array', () => {

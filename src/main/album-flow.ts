@@ -15,10 +15,16 @@ export function bindSetAlbumPaths(fn: SetAlbumPaths): void {
 }
 
 export function entriesToDTO(entries: AlbumLoadEntry[]): AlbumEntryDTO[] {
-  return entries.map((e) => ({
-    path: e.path,
-    mtimeMs: e.mtimeMs,
-  }));
+  return entries.map((e) => {
+    const dto: AlbumEntryDTO = {
+      path: e.path,
+      mtimeMs: e.mtimeMs,
+    };
+    if (typeof e.encodedBytes === 'number' && Number.isFinite(e.encodedBytes)) {
+      dto.encodedBytes = e.encodedBytes;
+    }
+    return dto;
+  });
 }
 
 function sendAlbumProgress(

@@ -27,15 +27,15 @@ function fakeWindow(messages: SentMessage[]): Parameters<typeof executeAlbumLoad
   } as Parameters<typeof executeAlbumLoad>[1];
 }
 
-test('entriesToDTO emits path-only DTOs before renderer-side metadata is known', () => {
+test('entriesToDTO emits stat-only DTOs before renderer-side metadata is known', () => {
   const entries: WalkEntry[] = [
-    { path: '/p/static.webp', mtimeMs: 1 },
-    { path: '/p/animated.gif', mtimeMs: 2 },
+    { path: '/p/static.webp', mtimeMs: 1, encodedBytes: 123 },
+    { path: '/p/animated.gif', mtimeMs: 2, encodedBytes: 456 },
   ];
 
   assert.deepEqual(entriesToDTO(entries), [
-    { path: '/p/static.webp', mtimeMs: 1 },
-    { path: '/p/animated.gif', mtimeMs: 2 },
+    { path: '/p/static.webp', mtimeMs: 1, encodedBytes: 123 },
+    { path: '/p/animated.gif', mtimeMs: 2, encodedBytes: 456 },
   ]);
 });
 
@@ -62,9 +62,13 @@ test('executeAlbumLoad broadcasts discovered files without reading every image f
     assert.deepEqual(
       load.payload.entries.map((entry) => Object.keys(entry).sort()),
       [
-        ['mtimeMs', 'path'],
-        ['mtimeMs', 'path'],
+        ['encodedBytes', 'mtimeMs', 'path'],
+        ['encodedBytes', 'mtimeMs', 'path'],
       ],
+    );
+    assert.deepEqual(
+      load.payload.entries.map((entry) => entry.encodedBytes),
+      [14, 14],
     );
     assert.equal(load.payload.currentIndex, 1);
   } finally {

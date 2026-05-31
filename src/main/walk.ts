@@ -11,6 +11,8 @@ const NATURAL_FILENAME_COLLATOR = new Intl.Collator(undefined, {
 export interface WalkEntry {
   path: string;
   mtimeMs: number;
+  /** Encoded file size from the directory walk stat; no image decoding required. */
+  encodedBytes?: number;
 }
 
 function extOf(p: string): string {
@@ -35,8 +37,8 @@ function walkInto(dir: string, level: number, out: WalkEntry[]): void {
     } else if (ent.isFile()) {
       if (!SUPPORTED_EXT.has(extOf(ent.name))) continue;
       try {
-        const mtimeMs = fs.statSync(full).mtimeMs;
-        out.push({ path: full, mtimeMs });
+        const stat = fs.statSync(full);
+        out.push({ path: full, mtimeMs: stat.mtimeMs, encodedBytes: stat.size });
       } catch {
         continue;
       }
