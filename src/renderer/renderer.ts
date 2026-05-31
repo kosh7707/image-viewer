@@ -23,8 +23,10 @@ import { PositionHud } from './position-hud';
 import { PreloadPanel, type PreloadPanelItem, type PreloadPanelItemKind } from './preload-panel';
 import { hideBootOverlay } from './boot-overlay';
 import {
-  planPreloadBudgetCandidates,
-  type PreloadBudgetKind,
+  estimateAnimationBytes,
+  estimatePreparedMediaBytesForLimit,
+  planAlbumPreloadBudget,
+  shouldPrepareNativeWithin,
   type PreloadBudgetPlan,
 } from './preload-budget';
 import { MAX_NATIVE_GIF_BYTES } from './animation-policy';
@@ -491,54 +493,18 @@ function applyPlannedPreloadBudgets(options: { protectCurrent?: boolean } = {}):
 function planPreloadBudget(): PreloadBudgetPlan {
   const entries = album.entries();
   const totalLimit = currentPreferences.preload.animatedMemoryLimitBytes;
-  const plan: PreloadBudgetPlan = {
-    allowedPaths: new Set<string>(),
-    staticBytes: 0,
-    animatedBytes: 0,
-  };
-  if (entries.length === 0) return plan;
-
-  const currentIndex = album.index();
-  const candidates = entries
-    .map((entry, index) => ({
-      path: entry.path,
-      index,
-      kind: preloadBudgetKind(entry),
-      bytes: estimatePreloadEntryBytes(entry, totalLimit),
-    }))
-    .filter(
-      (
-        item,
-      ): item is {
-        path: string;
-        index: number;
-        kind: PreloadBudgetKind;
-        bytes: number | null;
-      } => item.kind !== null && (item.bytes === null || isFinitePositive(item.bytes)),
-    );
-  return planPreloadBudgetCandidates({
-    candidates,
-    currentIndex,
-    totalEntries: entries.length,
+  if (entries.length === 0) {
+    return {
+      allowedPaths: new Set<string>(),
+      staticBytes: 0,
+      animatedBytes: 0,
+    };
+  }
+  return planAlbumPreloadBudget({
+    entries,
+    currentIndex: album.index(),
     totalLimit,
   });
-}
-
-function preloadBudgetKind(entry: AlbumEntryDTO): PreloadBudgetKind | null {
-  const kind = mediaKindForEntry(entry);
-  if (kind === 'static-bitmap') return 'static';
-  if (kind === 'animated-gif' || kind === 'webp') return 'animated';
-  return null;
-}
-
-function estimatePreloadEntryBytes(entry: AlbumEntryDTO, limitBytes: number): number | null {
-  if (preloadBudgetKind(entry) === 'static') {
-    if (isFinitePositive(entry.estimatedBytes)) return Math.ceil(entry.estimatedBytes);
-    if (entry.width && entry.height) return entry.width * entry.height * 4;
-    if (isFinitePositive(entry.encodedBytes)) return Math.ceil(entry.encodedBytes);
-    return null;
-  }
-  return estimatePreparedMediaBytesForLimit(entry, limitBytes);
 }
 
 function scheduleAnimatedPreload(options: ScheduleAnimatedPreloadOptions = {}): void {
@@ -630,13 +596,6 @@ function shouldPrepareNative(entry: AlbumEntryDTO): boolean {
   return shouldPrepareNativeWithin(entry, preparedMediaCache.limitBytes());
 }
 
-function shouldPrepareNativeWithin(entry: AlbumEntryDTO, limitBytes: number): boolean {
-  const allFrames = entry.allFramesDecodedBytes;
-  if (typeof allFrames === 'number' && allFrames > limitBytes) return true;
-  const encoded = entry.encodedBytes;
-  return typeof encoded === 'number' && encoded > MAX_NATIVE_GIF_BYTES;
-}
-
 async function prepareAnimatedMedia(
   entry: AlbumEntryDTO,
   context?: AnimatedMediaPrepareContext,
@@ -715,35 +674,8 @@ async function prepareNativeMedia(entry: AlbumEntryDTO): Promise<PreparedMedia |
   };
 }
 
-function estimateAnimationBytes(entry: AlbumEntryDTO, frameCount: number): number {
-  if (typeof entry.allFramesDecodedBytes === 'number' && entry.allFramesDecodedBytes > 0) {
-    return entry.allFramesDecodedBytes;
-  }
-  if (entry.width && entry.height) return entry.width * entry.height * 4 * frameCount;
-  return Math.max(1, entry.encodedBytes ?? 1);
-}
-
 function estimatePreparedMediaBytes(entry: AlbumEntryDTO): number | null {
   return estimatePreparedMediaBytesForLimit(entry, preparedMediaCache.limitBytes());
-}
-
-function estimatePreparedMediaBytesForLimit(
-  entry: AlbumEntryDTO,
-  limitBytes: number,
-): number | null {
-  if (!isFinitePositive(entry.encodedBytes) && !isFinitePositive(entry.allFramesDecodedBytes)) {
-    return limitBytes;
-  }
-  if (shouldPrepareNativeWithin(entry, limitBytes)) return Math.max(1, entry.encodedBytes ?? 1);
-  if (isFinitePositive(entry.allFramesDecodedBytes)) return entry.allFramesDecodedBytes!;
-  if (entry.width && entry.height && entry.frameCount) {
-    return estimateAnimationBytes(entry, entry.frameCount);
-  }
-  return Math.max(1, entry.encodedBytes ?? 1);
-}
-
-function isFinitePositive(value: unknown): value is number {
-  return typeof value === 'number' && Number.isFinite(value) && value > 0;
 }
 
 async function decodeGifBytes(

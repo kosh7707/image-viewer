@@ -2,7 +2,11 @@ import { test } from 'node:test';
 import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { planPreloadBudgetCandidates } from '../src/renderer/preload-budget';
+import {
+  estimatePreparedMediaBytesForLimit,
+  planAlbumPreloadBudget,
+  planPreloadBudgetCandidates,
+} from '../src/renderer/preload-budget';
 
 test('preload budget planner fills mixed static and animated entries from current outward', () => {
   const plan = planPreloadBudgetCandidates({
@@ -81,13 +85,81 @@ test('preload budget planner caps unknown static candidate count instead of admi
   assert.equal(plan.animatedBytes, 0);
 });
 
-test('renderer preload budget passes unknown static estimates to the planner', () => {
-  const src = fs.readFileSync(path.join(process.cwd(), 'src/renderer/renderer.ts'), 'utf8');
+test('album preload budget passes unknown static estimates to the planner', () => {
+  const src = fs.readFileSync(path.join(process.cwd(), 'src/renderer/preload-budget.ts'), 'utf8');
 
   assert.equal(
     src.includes('item.bytes !== null'),
     false,
-    'renderer must not drop path-only static candidates before the planner can reserve RAM',
+    'planning must not drop path-only static candidates before the planner can reserve RAM',
   );
   assert.equal(src.includes('item.bytes === null'), true);
+});
+
+test('renderer does not treat encoded file size as decoded static cache budget', () => {
+  const src = fs.readFileSync(path.join(process.cwd(), 'src/renderer/renderer.ts'), 'utf8');
+
+  assert.equal(
+    src.includes('if (isFinitePositive(entry.encodedBytes)) return Math.ceil(entry.encodedBytes);'),
+    false,
+    'stat-only image files must stay unknown so the static cache can use the RAM cap, not tiny encoded-byte caps',
+  );
+});
+
+test('renderer does not treat encoded GIF/WebP size as decoded animation cache budget', () => {
+  const src = fs.readFileSync(path.join(process.cwd(), 'src/renderer/renderer.ts'), 'utf8');
+
+  assert.equal(
+    src.includes('return Math.max(1, entry.encodedBytes ?? 1);'),
+    false,
+    'small encoded GIF/WebP files can decode to much larger frame caches and must not size the animation cache by file bytes',
+  );
+});
+
+test('album preload planner gives stat-only static images decoded cache headroom', () => {
+  const plan = planAlbumPreloadBudget({
+    currentIndex: 0,
+    totalLimit: 100,
+    entries: [
+      { path: '/0.jpg', mtimeMs: 1, encodedBytes: 5 },
+      { path: '/1.png', mtimeMs: 1, encodedBytes: 7 },
+    ],
+  });
+
+  assert.deepEqual([...plan.allowedPaths], ['/0.jpg', '/1.png']);
+  assert.equal(plan.staticBytes, 100);
+  assert.equal(plan.animatedBytes, 0);
+});
+
+test('animated stat-only encoded bytes are inflated before sizing the decoded cache', () => {
+  const smallEncodedBytes = 10 * 1024 * 1024;
+  const limitBytes = 4 * 1024 * 1024 * 1024;
+  const estimate = estimatePreparedMediaBytesForLimit(
+    { path: '/small.gif', mtimeMs: 1, encodedBytes: smallEncodedBytes },
+    limitBytes,
+  );
+
+  assert.equal(typeof estimate, 'number');
+  assert.ok(estimate! > smallEncodedBytes);
+  assert.ok(estimate! <= limitBytes);
+
+  assert.equal(
+    estimatePreparedMediaBytesForLimit(
+      { path: '/large.gif', mtimeMs: 1, encodedBytes: 101 * 1024 * 1024 },
+      limitBytes,
+    ),
+    101 * 1024 * 1024,
+  );
+});
+
+test('album preload planner gives stat-only animated media the full animation cache cap', () => {
+  const plan = planAlbumPreloadBudget({
+    currentIndex: 0,
+    totalLimit: 100,
+    entries: [{ path: '/small.gif', mtimeMs: 1, encodedBytes: 10 }],
+  });
+
+  assert.deepEqual([...plan.allowedPaths], ['/small.gif']);
+  assert.equal(plan.staticBytes, 0);
+  assert.equal(plan.animatedBytes, 100);
 });
