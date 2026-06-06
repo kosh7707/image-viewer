@@ -4,6 +4,7 @@ import * as fs from 'fs';
 import { pathToFileURL } from 'url';
 import type { UserPreferences } from '../shared/user-preferences';
 import { applyPortableRuntimePaths } from './portable-runtime';
+import { collectLaunchPaths } from './launch-args';
 
 let mainWindow: BrowserWindow | null = null;
 let albumFlowPromise: Promise<typeof import('./album-flow')> | null = null;
@@ -13,6 +14,12 @@ let menuModulePromise: Promise<typeof import('./menu')> | null = null;
 let windowModulePromise: Promise<typeof import('./window')> | null = null;
 let shellIntegrationModulePromise: Promise<typeof import('./shell-integration')> | null = null;
 let animationSpeedMultiplier = 1.0;
+let rendererLoaded = false;
+let pendingLaunchTimer: ReturnType<typeof setTimeout> | null = null;
+const pendingLaunchPaths: string[] = [];
+const pendingLaunchPathKeys = new Set<string>();
+const initialLaunchPaths = collectLaunchPaths(process.argv);
+const ARG_LOAD_DEBOUNCE_MS = 250;
 
 const processStartedAt = Date.now();
 applyPortableRuntimePaths({
@@ -200,34 +207,62 @@ function resolveReadableAlbumImage(filePath: string): string {
   return resolved;
 }
 
-function pickArgPath(): string | null {
-  const candidates = [process.argv[1], process.argv[2]].filter(Boolean) as string[];
-  for (const c of candidates) {
-    if (c === '.' || c === '--') continue;
+async function handleLaunchPaths(argPaths: string[], win: BrowserWindow): Promise<void> {
+  const requests: Array<{ rootDir: string; selectedFile: string | null }> = [];
+  for (const argPath of argPaths) {
     try {
-      fs.statSync(c);
-      return c;
+      const abs = path.resolve(argPath);
+      const st = fs.statSync(abs);
+      if (st.isFile()) {
+        requests.push({ rootDir: path.dirname(abs), selectedFile: abs });
+      } else if (st.isDirectory()) {
+        requests.push({ rootDir: abs, selectedFile: null });
+      }
     } catch {
-      // not a real path, skip
+      // bad arg; ignore
     }
   }
-  return null;
+
+  if (requests.length === 0) return;
+  try {
+    const { executeAlbumLoadRequests } = await loadAlbumFlow();
+    await executeAlbumLoadRequests(requests, win);
+  } catch {
+    // launch args must never prevent the viewer from opening
+  }
 }
 
-async function handleArgPath(argPath: string, win: BrowserWindow): Promise<void> {
-  try {
-    const abs = path.resolve(argPath);
-    const st = fs.statSync(abs);
-    const { executeAlbumLoad } = await loadAlbumFlow();
-    if (st.isFile()) {
-      const folder = path.dirname(abs);
-      await executeAlbumLoad(folder, win, abs);
-    } else if (st.isDirectory()) {
-      await executeAlbumLoad(abs, win, null);
-    }
-  } catch {
-    // bad arg; ignore
+function enqueueLaunchPaths(paths: string[]): void {
+  for (const filePath of paths) {
+    const resolved = path.resolve(filePath);
+    const key = resolved.toLowerCase();
+    if (pendingLaunchPathKeys.has(key)) continue;
+    pendingLaunchPathKeys.add(key);
+    pendingLaunchPaths.push(resolved);
   }
+  schedulePendingLaunchLoad();
+}
+
+function schedulePendingLaunchLoad(): void {
+  if (!rendererLoaded || !mainWindow || pendingLaunchPaths.length === 0) return;
+  if (pendingLaunchTimer) clearTimeout(pendingLaunchTimer);
+  pendingLaunchTimer = setTimeout(() => {
+    pendingLaunchTimer = null;
+    void flushPendingLaunchPaths();
+  }, ARG_LOAD_DEBOUNCE_MS);
+}
+
+async function flushPendingLaunchPaths(): Promise<void> {
+  if (!mainWindow || pendingLaunchPaths.length === 0) return;
+  const paths = pendingLaunchPaths.splice(0);
+  pendingLaunchPathKeys.clear();
+  await handleLaunchPaths(paths, mainWindow);
+}
+
+function focusWindow(win: BrowserWindow): void {
+  if (win.isDestroyed()) return;
+  if (win.isMinimized()) win.restore();
+  win.focus();
 }
 
 function createWindow(): void {
@@ -255,16 +290,15 @@ function createWindow(): void {
   mainWindow.webContents.on('did-finish-load', () => {
     logBootEvent('renderer-loaded');
     if (!mainWindow) return;
-    const arg = pickArgPath();
-    if (arg) {
-      void handleArgPath(arg, mainWindow);
-    }
+    rendererLoaded = true;
+    schedulePendingLaunchLoad();
     void startRssMonitorForWindow(mainWindow);
   });
 
   mainWindow.on('closed', () => {
     stopRssMonitorIfLoaded();
     mainWindow = null;
+    rendererLoaded = false;
   });
 }
 
@@ -347,10 +381,23 @@ ipcMain.on('boot:renderer-ready', () => {
   logBootEvent('renderer-ready');
 });
 
-app.whenReady().then(() => {
-  logBootEvent('app-ready');
-  createWindow();
-});
+const singleInstanceLock = app.requestSingleInstanceLock();
+
+if (!singleInstanceLock) {
+  app.quit();
+} else {
+  enqueueLaunchPaths(initialLaunchPaths);
+
+  app.on('second-instance', (_event, commandLine) => {
+    enqueueLaunchPaths(collectLaunchPaths(commandLine));
+    if (mainWindow) focusWindow(mainWindow);
+  });
+
+  app.whenReady().then(() => {
+    logBootEvent('app-ready');
+    createWindow();
+  });
+}
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {

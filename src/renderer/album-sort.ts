@@ -30,7 +30,15 @@ function basename(p: string): string {
   return i >= 0 ? p.slice(i + 1) : p;
 }
 
+function dirname(p: string): string {
+  const i = Math.max(p.lastIndexOf('/'), p.lastIndexOf('\\'));
+  return i >= 0 ? p.slice(0, i) : '';
+}
+
 function compareFilenamePath(leftPath: string, rightPath: string): number {
+  const directory = compareDirectoryPath(dirname(leftPath), dirname(rightPath));
+  if (directory !== 0) return directory;
+
   const left = basename(leftPath);
   const right = basename(rightPath);
   const natural = NATURAL_FILENAME_COLLATOR.compare(left, right);
@@ -38,6 +46,18 @@ function compareFilenamePath(leftPath: string, rightPath: string): number {
   const exact = left.localeCompare(right, undefined, { sensitivity: 'variant' });
   if (exact !== 0) return exact;
   return leftPath.localeCompare(rightPath, undefined, { numeric: true, sensitivity: 'base' });
+}
+
+function compareDirectoryPath(leftPath: string, rightPath: string): number {
+  if (leftPath === rightPath) return 0;
+  const leftParts = leftPath.split(/[\\/]+/).filter(Boolean);
+  const rightParts = rightPath.split(/[\\/]+/).filter(Boolean);
+  const length = Math.min(leftParts.length, rightParts.length);
+  for (let index = 0; index < length; index += 1) {
+    const natural = NATURAL_FILENAME_COLLATOR.compare(leftParts[index]!, rightParts[index]!);
+    if (natural !== 0) return natural;
+  }
+  return leftParts.length - rightParts.length;
 }
 
 export function sortAlbum(

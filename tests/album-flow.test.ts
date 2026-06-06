@@ -3,7 +3,7 @@ import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { entriesToDTO, executeAlbumLoad } from '../src/main/album-flow';
+import { entriesToDTO, executeAlbumLoad, executeAlbumLoadRequests } from '../src/main/album-flow';
 import type { WalkEntry } from '../src/main/walk';
 import type { AlbumLoadPayload, AlbumProgressPayload } from '../src/preload/api';
 
@@ -71,6 +71,42 @@ test('executeAlbumLoad broadcasts discovered files without reading every image f
       [14, 14],
     );
     assert.equal(load.payload.currentIndex, 1);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('executeAlbumLoadRequests merges multiple folders into one path-sorted album', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'image-viewer-album-flow-multi-'));
+  const messages: SentMessage[] = [];
+  try {
+    const a = path.join(root, 'a');
+    const b = path.join(root, 'b');
+    const a1 = path.join(a, 'image001.png');
+    const a2 = path.join(a, 'image002.png');
+    const b1 = path.join(b, 'image001.png');
+    fs.mkdirSync(a, { recursive: true });
+    fs.mkdirSync(b, { recursive: true });
+    fs.writeFileSync(a2, 'a2');
+    fs.writeFileSync(b1, 'b1');
+    fs.writeFileSync(a1, 'a1');
+
+    await executeAlbumLoadRequests(
+      [
+        { rootDir: b, selectedFile: null },
+        { rootDir: a, selectedFile: null },
+      ],
+      fakeWindow(messages),
+    );
+
+    const loads = messages.filter(
+      (msg): msg is Extract<SentMessage, { channel: 'album:load' }> => msg.channel === 'album:load',
+    );
+    assert.equal(loads.length, 1);
+    assert.deepEqual(
+      loads[0]!.payload.entries.map((entry) => entry.path),
+      [a1, a2, b1],
+    );
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

@@ -43,6 +43,26 @@ test('walk: sorts numeric filenames naturally', () => {
   );
 });
 
+test('walk: groups duplicate filenames by relative folder before filename order', () => {
+  const d = tmpdir('folders');
+  touch(path.join(d, 'b', 'image001.png'));
+  touch(path.join(d, 'a', 'image003.png'));
+  touch(path.join(d, 'a', 'image001.png'));
+  touch(path.join(d, 'a', 'image002.png'));
+
+  const result = walkImages(d);
+
+  assert.deepEqual(
+    result.map((r) => path.relative(d, r.path)),
+    [
+      path.join('a', 'image001.png'),
+      path.join('a', 'image002.png'),
+      path.join('a', 'image003.png'),
+      path.join('b', 'image001.png'),
+    ],
+  );
+});
+
 test('walk: depth cap = 4, silently drops deeper', () => {
   const d = tmpdir('depth');
   // depth 1

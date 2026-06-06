@@ -1,6 +1,6 @@
 {
   "name": "image-viewer",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Minimal fullscreen Electron image viewer (JPEG/PNG/WebP/GIF) for Windows",
   "main": "dist/src/main/main.js",
   "scripts": {

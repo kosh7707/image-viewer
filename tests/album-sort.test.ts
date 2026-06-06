@@ -55,6 +55,28 @@ test('sort by filename asc uses natural numeric order', () => {
   assert.equal(r.currentIndex, 2);
 });
 
+test('sort by filename asc keeps duplicate filenames grouped by folder path', () => {
+  const album: AlbumEntry[] = [
+    { path: '/root/b/image001.png', mtimeMs: 1 },
+    { path: '/root/a/image003.png', mtimeMs: 2 },
+    { path: '/root/a/image001.png', mtimeMs: 3 },
+    { path: '/root/a/image002.png', mtimeMs: 4 },
+  ];
+
+  const r = run(album, 'filename', 'asc', '/root/b/image001.png');
+
+  assert.deepEqual(
+    r.entries.map((e) => e.path),
+    [
+      '/root/a/image001.png',
+      '/root/a/image002.png',
+      '/root/a/image003.png',
+      '/root/b/image001.png',
+    ],
+  );
+  assert.equal(r.currentIndex, 3);
+});
+
 test('sort by mtime asc', () => {
   const r = run(makeAlbum(), 'mtime', 'asc', '/p/c.jpg');
   assert.deepEqual(

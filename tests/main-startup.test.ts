@@ -137,6 +137,16 @@ test('BrowserWindow creation does not start eager preference loading', () => {
   assert.doesNotMatch(readyBlock, /preferences-load-failed/);
 });
 
+test('main process uses one app instance and forwards later launch paths', () => {
+  const main = readSource('src/main/main.ts');
+
+  assert.match(main, /requestSingleInstanceLock\(\)/);
+  assert.match(main, /second-instance/);
+  assert.match(main, /collectLaunchPaths\(commandLine\)/);
+  assert.match(main, /executeAlbumLoadRequests/);
+  assert.doesNotMatch(main, /pickArgPath/);
+});
+
 test('preferences:get refreshes main-local animation speed on demand', () => {
   const main = readSource('src/main/main.ts');
   const handlerStart = main.indexOf("ipcMain.handle('preferences:get'");

@@ -56,15 +56,41 @@ function compareWalkEntryName(a: WalkEntry, b: WalkEntry): number {
   return a.path.localeCompare(b.path, undefined, { numeric: true, sensitivity: 'base' });
 }
 
+function compareWalkEntryPath(rootDir: string, a: WalkEntry, b: WalkEntry): number {
+  const leftRelative = path.relative(rootDir, a.path);
+  const rightRelative = path.relative(rootDir, b.path);
+  const directory = compareRelativeDirectory(leftRelative, rightRelative);
+  if (directory !== 0) return directory;
+  return compareWalkEntryName(a, b);
+}
+
+function compareRelativeDirectory(leftRelative: string, rightRelative: string): number {
+  const left = path.dirname(leftRelative);
+  const right = path.dirname(rightRelative);
+  const leftDir = left === '.' ? '' : left;
+  const rightDir = right === '.' ? '' : right;
+  if (leftDir === rightDir) return 0;
+
+  const leftParts = leftDir.split(/[\\/]+/).filter(Boolean);
+  const rightParts = rightDir.split(/[\\/]+/).filter(Boolean);
+  const length = Math.min(leftParts.length, rightParts.length);
+  for (let index = 0; index < length; index += 1) {
+    const natural = NATURAL_FILENAME_COLLATOR.compare(leftParts[index]!, rightParts[index]!);
+    if (natural !== 0) return natural;
+  }
+  return leftParts.length - rightParts.length;
+}
+
 /**
  * Recursively collect supported image files under `rootDir`, capped at
  * `MAX_DEPTH = 4` levels. Symlinks are skipped (no cycle following).
- * Hidden directories (leading dot) are skipped. Returns entries sorted
- * by basename ascending (locale-aware).
+ * Hidden directories (leading dot) are skipped. Returns entries sorted by
+ * relative folder path, then natural filename.
  */
 export function walkImages(rootDir: string): WalkEntry[] {
+  const resolvedRoot = path.resolve(rootDir);
   const out: WalkEntry[] = [];
-  walkInto(rootDir, 1, out);
-  out.sort(compareWalkEntryName);
+  walkInto(resolvedRoot, 1, out);
+  out.sort((a, b) => compareWalkEntryPath(resolvedRoot, a, b));
   return out;
 }
