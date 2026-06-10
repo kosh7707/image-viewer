@@ -5,7 +5,8 @@
  * Important distinction: `createImageBitmap(new Blob([animatedWebp]))` yields a
  * single bitmap, not an animation. Static WebP may use the bitmap cache only
  * when album-load metadata proves it has one frame; animated or metadata-less
- * WebP stays on the WebP-specific renderer.
+ * WebP stays on the WebP-specific renderer. EPS is rasterized by the main
+ * process first, then cached as a static bitmap under the original EPS path.
  */
 
 import type { AlbumEntryDTO } from '../preload/api';

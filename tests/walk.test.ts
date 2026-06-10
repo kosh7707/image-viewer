@@ -22,10 +22,11 @@ test('walk: collects images at depth 1 sorted alphabetically', () => {
   touch(path.join(d, 'c.txt')); // non-image, must be skipped
   touch(path.join(d, 'd.webp'));
   touch(path.join(d, 'e.gif'));
+  touch(path.join(d, 'f.eps'));
   const result = walkImages(d);
   assert.deepEqual(
     result.map((r) => path.basename(r.path)),
-    ['a.PNG', 'b.jpg', 'd.webp', 'e.gif'],
+    ['a.PNG', 'b.jpg', 'd.webp', 'e.gif', 'f.eps'],
   );
 });
 
@@ -130,6 +131,7 @@ test('walk: extension matching is case-insensitive', () => {
   touch(path.join(d, 'c.PnG'));
   touch(path.join(d, 'd.WeBp'));
   touch(path.join(d, 'e.GIF'));
+  touch(path.join(d, 'f.EPS'));
   const result = walkImages(d);
-  assert.equal(result.length, 5);
+  assert.equal(result.length, 6);
 });

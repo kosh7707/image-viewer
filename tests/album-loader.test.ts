@@ -27,6 +27,7 @@ test('loadAlbum: non-empty folder returns walked entries without measuring or co
     { path: '/p/a.png', mtimeMs: 1 },
     { path: '/p/b.gif', mtimeMs: 2 },
     { path: '/p/c.webp', mtimeMs: 3 },
+    { path: '/p/d.eps', mtimeMs: 4 },
   ];
 
   const r = await loadAlbum('/p', {
@@ -42,6 +43,7 @@ test('loadAlbum: metadata-less entries stay in the album for renderer-side prelo
     { path: '/p/good.jpg', mtimeMs: 1 },
     { path: '/p/header-would-have-failed.gif', mtimeMs: 2 },
     { path: '/p/also-good.png', mtimeMs: 3 },
+    { path: '/p/render-later.eps', mtimeMs: 4 },
   ];
 
   const r = await loadAlbum('/p', {
@@ -51,7 +53,7 @@ test('loadAlbum: metadata-less entries stay in the album for renderer-side prelo
   assert.equal(r.status, 'ok');
   assert.deepEqual(
     r.entries.map((entry) => entry.path),
-    ['/p/good.jpg', '/p/header-would-have-failed.gif', '/p/also-good.png'],
+    ['/p/good.jpg', '/p/header-would-have-failed.gif', '/p/also-good.png', '/p/render-later.eps'],
   );
 });
 

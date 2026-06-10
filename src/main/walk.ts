@@ -1,7 +1,8 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { SUPPORTED_EXTS } from './folder';
 
-const SUPPORTED_EXT = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif']);
+const SUPPORTED_EXT = new Set<string>(SUPPORTED_EXTS);
 const MAX_DEPTH = 4;
 const NATURAL_FILENAME_COLLATOR = new Intl.Collator(undefined, {
   numeric: true,

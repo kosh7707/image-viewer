@@ -46,7 +46,7 @@ export function settingsSummaryText({
 }
 
 export function shellIntegrationTargetSummary(): string {
-  return '.jpg, .jpeg, .png, .webp, .gif, and folders';
+  return '.jpg, .jpeg, .png, .webp, .gif, .eps, and folders';
 }
 
 export class SettingsDialog {

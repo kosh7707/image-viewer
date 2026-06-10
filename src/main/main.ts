@@ -13,6 +13,7 @@ let rssModulePromise: Promise<typeof import('./rss')> | null = null;
 let menuModulePromise: Promise<typeof import('./menu')> | null = null;
 let windowModulePromise: Promise<typeof import('./window')> | null = null;
 let shellIntegrationModulePromise: Promise<typeof import('./shell-integration')> | null = null;
+let epsRendererModulePromise: Promise<typeof import('./eps-renderer')> | null = null;
 let animationSpeedMultiplier = 1.0;
 let rendererLoaded = false;
 let pendingLaunchTimer: ReturnType<typeof setTimeout> | null = null;
@@ -106,6 +107,14 @@ function loadShellIntegrationModule(): Promise<typeof import('./shell-integratio
   return shellIntegrationModulePromise;
 }
 
+function loadEpsRendererModule(): Promise<typeof import('./eps-renderer')> {
+  epsRendererModulePromise ??= import('./eps-renderer').catch((error) => {
+    epsRendererModulePromise = null;
+    throw error;
+  });
+  return epsRendererModulePromise;
+}
+
 async function loadPreferences(): Promise<UserPreferences> {
   const preferences = await loadPreferencesModule();
   return await preferences.loadPreferences(userDataDir());
@@ -171,7 +180,7 @@ async function showContextMenuForWindow(
 // Defense-in-depth: the renderer may only read files belonging to the most
 // recently broadcast album. Each entry is an absolute, resolved path string.
 const currentAlbumPaths: Set<string> = new Set();
-const READABLE_IMAGE_EXTS = ['.jpg', '.jpeg', '.png', '.webp', '.gif'] as const;
+const READABLE_IMAGE_EXTS = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.eps'] as const;
 
 export function setAlbumPaths(images: string[]): void {
   currentAlbumPaths.clear();
@@ -357,6 +366,16 @@ ipcMain.handle('fs:readFile', async (_event, filePath: string) => {
 ipcMain.handle('fs:fileUrl', (_event, filePath: string) => {
   const resolved = resolveReadableAlbumImage(filePath);
   return pathToFileURL(resolved).toString();
+});
+
+ipcMain.handle('eps:render', async (_event, filePath: string) => {
+  const resolved = resolveReadableAlbumImage(filePath);
+  if (path.extname(resolved).toLowerCase() !== '.eps') {
+    throw new Error('eps:render only accepts .eps files');
+  }
+  const epsRenderer = await loadEpsRendererModule();
+  const result = await epsRenderer.renderEpsToPng(resolved);
+  return result.data;
 });
 
 ipcMain.handle('dialog:openFile', async (event) => {

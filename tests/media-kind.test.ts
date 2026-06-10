@@ -20,12 +20,14 @@ test('mediaKindForPath keeps static bitmap formats on the canvas/cache path', ()
   assert.equal(mediaKindForPath('/pics/a.jpg'), 'static-bitmap');
   assert.equal(mediaKindForPath('/pics/a.jpeg'), 'static-bitmap');
   assert.equal(mediaKindForPath('/pics/a.png'), 'static-bitmap');
+  assert.equal(mediaKindForPath('/pics/a.eps'), 'static-bitmap');
 });
 
 test('isPreloadableBitmapPath keeps metadata-less WebP on the safe animated/native path', () => {
   assert.equal(isPreloadableBitmapPath('/pics/a.gif'), false);
   assert.equal(isPreloadableBitmapPath('/pics/a.webp'), false);
   assert.equal(isPreloadableBitmapPath('/pics/a.png'), true);
+  assert.equal(isPreloadableBitmapPath('/pics/a.eps'), true);
 });
 
 test('extOfPath is case-insensitive and returns empty for extensionless paths', () => {
@@ -56,4 +58,5 @@ test('isPreloadableBitmapEntry preloads static WebP but not animated or unknown 
   );
   assert.equal(isPreloadableBitmapEntry({ path: '/pics/unknown.webp', mtimeMs: 1 }), false);
   assert.equal(isPreloadableBitmapEntry({ path: '/pics/a.png', mtimeMs: 1 }), true);
+  assert.equal(isPreloadableBitmapEntry({ path: '/pics/a.eps', mtimeMs: 1 }), true);
 });

@@ -6,16 +6,16 @@ function readText(path: string): string {
   return fs.readFileSync(path, 'utf8');
 }
 
-test('package metadata is aligned with v1.0.1 release tag', () => {
+test('package metadata is aligned with v1.1.0 release tag', () => {
   const pkg = JSON.parse(readText('package.json')) as { version: string };
   const lock = JSON.parse(readText('package-lock.json')) as {
     version: string;
     packages: Record<string, { version?: string }>;
   };
 
-  assert.equal(pkg.version, '1.0.1');
-  assert.equal(lock.version, '1.0.1');
-  assert.equal(lock.packages['']?.version, '1.0.1');
+  assert.equal(pkg.version, '1.1.0');
+  assert.equal(lock.version, '1.1.0');
+  assert.equal(lock.packages['']?.version, '1.1.0');
 });
 
 test('release workflow publishes folder-portable zip assets, not single exe assets', () => {

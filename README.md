@@ -2,7 +2,7 @@
 
 Windows 이미지 뷰어
 
-지원: `.jpg`, `.jpeg`, `.png`, `.webp`, `.gif`
+지원: `.jpg`, `.jpeg`, `.png`, `.webp`, `.gif`, `.eps`
 
 ## 다운로드
 
@@ -31,4 +31,4 @@ ImageViewerPortable.cmd
 
 ## 라이선스
 
-MIT
+AGPL-3.0-only

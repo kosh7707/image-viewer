@@ -80,6 +80,8 @@ export interface ImageViewerApi {
   unregisterShellIntegration(): Promise<ShellIntegrationStatus>;
   /** Read an image file as bytes (validated by main). */
   readFile(filePath: string): Promise<Uint8Array>;
+  /** Render a validated EPS file to PNG bytes without modifying the source file. */
+  renderEps(filePath: string): Promise<Uint8Array>;
   /** Return a validated file:// URL for native browser image playback. */
   fileUrl(filePath: string): Promise<string>;
   /** Native file-open dialog filtered to supported extensions. */

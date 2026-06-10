@@ -2,6 +2,8 @@ appId: com.example.imageviewer
 productName: ImageViewer
 copyright: Copyright (c) 2026
 asar: true
+asarUnpack:
+  - node_modules/@bentopdf/gs-wasm/assets/**/*
 electronLanguages:
   - en-US
   - ko
@@ -12,6 +14,7 @@ files:
   - dist/**/*
   - node_modules/**/*
   - package.json
+  - LICENSE
   - '!dist/tests/**'
   - '!**/*.map'
   - '!**/*.ts'

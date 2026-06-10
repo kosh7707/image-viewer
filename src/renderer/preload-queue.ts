@@ -4,7 +4,8 @@
  * Cache policy v3: no fixed sliding window. The caller supplies the paths that
  * fit the user's preload RAM limit, sorted around the current album index.
  * GIFs and animated/unknown WebP files are skipped here; they go through
- * dedicated animated/native playback paths.
+ * dedicated animated/native playback paths. EPS files stay on this static path
+ * after main-process Ghostscript WASM rasterizes them to PNG bytes.
  *
  * Each decoded entry is admitted to the CacheGovernor, then GPU-pre-warmed
  * via a 1x1 drawImage to a hidden OffscreenCanvas so subsequent navigations
@@ -33,6 +34,8 @@ function mimeFor(p: string): string {
       return 'image/webp';
     case '.gif':
       return 'image/gif';
+    case '.eps':
+      return 'image/png';
     default:
       return 'application/octet-stream';
   }
@@ -211,7 +214,7 @@ export class PreloadQueue {
     myEpoch: number | undefined,
     options: DecodeOptions = {},
   ): Promise<ImageBitmap | null> {
-    const bytes = await window.api.readFile(filePath);
+    const bytes = await readDecodableBitmapBytes(filePath);
     if (extOfPath(filePath) === '.webp' && isAnimatedWebpBytes(bytes)) return null;
     const bitmap = await decodeBitmap(filePath, bytes);
     if (myEpoch !== undefined && this.getEpoch && this.getEpoch() !== myEpoch) {
@@ -274,6 +277,13 @@ export class PreloadQueue {
     }
     return targets;
   }
+}
+
+async function readDecodableBitmapBytes(filePath: string): Promise<Uint8Array> {
+  if (extOfPath(filePath) === '.eps') {
+    return await window.api.renderEps(filePath);
+  }
+  return await window.api.readFile(filePath);
 }
 
 function pathOf(source: PreloadSource): string {

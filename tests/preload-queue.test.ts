@@ -7,6 +7,7 @@ interface RuntimeGlobals {
   window?: {
     api: {
       readFile(filePath: string): Promise<Uint8Array>;
+      renderEps(filePath: string): Promise<Uint8Array>;
     };
   };
   createImageBitmap?: (source: Blob) => Promise<ImageBitmap>;
@@ -21,17 +22,33 @@ interface FakeBitmap {
 
 function withRendererRuntime<T>(
   files: Record<string, Uint8Array>,
-  run: (calls: { reads: string[]; decodes: Blob[]; bitmaps: FakeBitmap[] }) => Promise<T>,
+  run: (calls: {
+    reads: string[];
+    epsRenders: string[];
+    decodes: Blob[];
+    bitmaps: FakeBitmap[];
+  }) => Promise<T>,
 ): Promise<T> {
   const globals = globalThis as unknown as RuntimeGlobals;
   const oldWindow = globals.window;
   const oldCreateImageBitmap = globals.createImageBitmap;
-  const calls = { reads: [] as string[], decodes: [] as Blob[], bitmaps: [] as FakeBitmap[] };
+  const calls = {
+    reads: [] as string[],
+    epsRenders: [] as string[],
+    decodes: [] as Blob[],
+    bitmaps: [] as FakeBitmap[],
+  };
 
   globals.window = {
     api: {
       async readFile(filePath: string): Promise<Uint8Array> {
         calls.reads.push(filePath);
+        const bytes = files[filePath];
+        if (!bytes) throw new Error(`missing fixture: ${filePath}`);
+        return bytes;
+      },
+      async renderEps(filePath: string): Promise<Uint8Array> {
+        calls.epsRenders.push(filePath);
         const bytes = files[filePath];
         if (!bytes) throw new Error(`missing fixture: ${filePath}`);
         return bytes;
@@ -109,6 +126,26 @@ test('PreloadQueue preloads path-only static images and leaves unknown animation
   );
 });
 
+test('PreloadQueue rasterizes EPS through main before bitmap decode', async () => {
+  await withRendererRuntime(
+    { '/p/vector.eps': new Uint8Array([137, 80, 78, 71]) },
+    async (calls) => {
+      const governor = new CacheGovernor();
+      const queue = new PreloadQueue(governor);
+
+      const final = await waitForPreload(queue, [{ path: '/p/vector.eps', mtimeMs: 1 }]);
+
+      assert.deepEqual(calls.reads, []);
+      assert.deepEqual(calls.epsRenders, ['/p/vector.eps']);
+      assert.equal(calls.decodes.length, 1);
+      assert.equal(calls.decodes[0]?.type, 'image/png');
+      assert.equal(final.total, 1);
+      assert.equal(final.completed, 1);
+      assert.equal(governor.has('/p/vector.eps'), true);
+    },
+  );
+});
+
 test('PreloadQueue refuses animated WebP bytes before createImageBitmap can collapse animation', async () => {
   await withRendererRuntime(
     { '/p/animated.webp': makeAnimatedWebpContainer(3, 2, 2) },
@@ -140,6 +177,10 @@ test('PreloadQueue joins a matching in-flight decode instead of returning null',
   globals.window = {
     api: {
       async readFile(filePath: string): Promise<Uint8Array> {
+        reads.push(filePath);
+        return await readGate;
+      },
+      async renderEps(filePath: string): Promise<Uint8Array> {
         reads.push(filePath);
         return await readGate;
       },
@@ -240,6 +281,10 @@ test('PreloadQueue drops an in-flight scheduled decode after the RAM plan change
         reads.push(filePath);
         return await readGate;
       },
+      async renderEps(filePath: string): Promise<Uint8Array> {
+        reads.push(filePath);
+        return await readGate;
+      },
     },
   };
   globals.createImageBitmap = async (): Promise<ImageBitmap> => {
@@ -315,6 +360,9 @@ test('PreloadQueue upgrades an in-flight scheduled decode when current render jo
       async readFile(): Promise<Uint8Array> {
         return await readGate;
       },
+      async renderEps(): Promise<Uint8Array> {
+        return await readGate;
+      },
     },
   };
   globals.createImageBitmap = async (): Promise<ImageBitmap> =>
@@ -357,6 +405,9 @@ test('PreloadQueue lets current render rescue a cancelled scheduled decode', asy
   globals.window = {
     api: {
       async readFile(): Promise<Uint8Array> {
+        return await readGate;
+      },
+      async renderEps(): Promise<Uint8Array> {
         return await readGate;
       },
     },

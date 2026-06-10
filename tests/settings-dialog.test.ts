@@ -38,6 +38,7 @@ test('settings shell integration copy promises explicit extensions and folders o
   assert.match(summary, /\.png/);
   assert.match(summary, /\.webp/);
   assert.match(summary, /\.gif/);
+  assert.match(summary, /\.eps/);
   assert.match(summary, /folders/i);
   assert.doesNotMatch(summary, /all files/i);
   assert.doesNotMatch(summary, /default app/i);

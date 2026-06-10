@@ -31,11 +31,13 @@ test('entriesToDTO emits stat-only DTOs before renderer-side metadata is known',
   const entries: WalkEntry[] = [
     { path: '/p/static.webp', mtimeMs: 1, encodedBytes: 123 },
     { path: '/p/animated.gif', mtimeMs: 2, encodedBytes: 456 },
+    { path: '/p/vector.eps', mtimeMs: 3, encodedBytes: 789 },
   ];
 
   assert.deepEqual(entriesToDTO(entries), [
     { path: '/p/static.webp', mtimeMs: 1, encodedBytes: 123 },
     { path: '/p/animated.gif', mtimeMs: 2, encodedBytes: 456 },
+    { path: '/p/vector.eps', mtimeMs: 3, encodedBytes: 789 },
   ]);
 });
 
